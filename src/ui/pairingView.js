@@ -367,6 +367,7 @@ export class PairingView extends EventTarget {
         break;
       case PAIRING_STATE.FAILED:
         show("pairing-actions");
+        show("pairing-progress");
         break;
     }
   }
