@@ -33,6 +33,8 @@ export class PairingView extends EventTarget {
     this._isInitiator = false;
     this._scanMode = null;
     this._currentQrPayload = null;
+    this._scanActive = false;
+    this._scanTimer = null;
   }
 
   mount() {
@@ -139,12 +141,17 @@ export class PairingView extends EventTarget {
       const video = document.getElementById("scanner-video");
       if (!video) return;
 
+      const scanOverlay = document.getElementById("scan-overlay");
+      if (scanOverlay) scanOverlay.classList.add("scanning-active");
+
       const scanStatus = document.getElementById("scan-status");
       if (scanStatus) scanStatus.textContent = statusText;
 
       await startCamera(video);
 
-      if (!("BarcodeDetector" in globalThis)) {
+      const barcodeSupport = "BarcodeDetector" in globalThis;
+      if (!barcodeSupport) {
+        if (scanOverlay) scanOverlay.classList.remove("scanning-active");
         if (scanStatus) {
           scanStatus.innerHTML = 'QR scanning not supported on this browser.<br><b>Copy the Connection Link</b> from the other device and paste it below instead.';
         }
@@ -153,24 +160,45 @@ export class PairingView extends EventTarget {
         return;
       }
 
-      this._scanInterval = setInterval(async () => {
-        try {
-          const scanned = await scanQRCode(video);
-          if (!scanned) return;
-
-          this._stopScanning();
-          if (this._scanMode === SCAN_MODE.OFFER) {
-            this._handleScannedOffer(scanned);
-          } else if (this._scanMode === SCAN_MODE.ANSWER) {
-            this._handleScannedAnswer(scanned);
-          }
-        } catch {
-        }
-      }, 500);
+      this._scanActive = true;
+      this._scanLoop(video);
     } catch (error) {
       console.error("[PairingView] Camera start failed:", error);
       this._renderState(PAIRING_STATE.FAILED);
       this._updateProgress("Camera unavailable", error.message || "Could not access camera");
+    }
+  }
+
+  async _scanLoop(video) {
+    if (!this._scanActive) return;
+
+    try {
+      const scanOverlay = document.getElementById("scan-overlay");
+      const scanStatus = document.getElementById("scan-status");
+      const scanned = await scanQRCode(video);
+      if (scanned) {
+        if (scanOverlay) {
+          scanOverlay.classList.remove("scanning-active");
+          scanOverlay.classList.add("scanning-detected");
+        }
+        this._stopScanning();
+        if (this._scanMode === SCAN_MODE.OFFER) {
+          this._handleScannedOffer(scanned);
+        } else if (this._scanMode === SCAN_MODE.ANSWER) {
+          this._handleScannedAnswer(scanned);
+        }
+        return;
+      }
+
+      if (scanStatus) {
+        const dots = ".".repeat(((Date.now() / 500) | 0) % 4);
+        scanStatus.textContent = `Scanning${dots} — point camera at the QR code`;
+      }
+    } catch {
+    }
+
+    if (this._scanActive) {
+      this._scanTimer = setTimeout(() => this._scanLoop(video), 300);
     }
   }
 
@@ -259,6 +287,11 @@ export class PairingView extends EventTarget {
   }
 
   _stopScanning() {
+    this._scanActive = false;
+    if (this._scanTimer) {
+      clearTimeout(this._scanTimer);
+      this._scanTimer = null;
+    }
     if (this._scanInterval) {
       clearInterval(this._scanInterval);
       this._scanInterval = null;
@@ -287,6 +320,8 @@ export class PairingView extends EventTarget {
     this._currentDataChannel = null;
     this._pendingPeerId = null;
     this._scanMode = null;
+    this._scanActive = false;
+    this._scanTimer = null;
   }
 
   _renderState(state) {

@@ -3,12 +3,6 @@ import { compressSdp, decompressSdp } from "./qrCodec.js";
 const ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
-  { urls: "stun:stun2.l.google.com:19302" },
-  {
-    urls: "turn:openrelay.metered.ca:443",
-    username: "openrelayproject",
-    credential: "openrelayproject",
-  },
 ];
 
 const RTC_CONFIG = {
@@ -71,7 +65,9 @@ export async function createOffer(deviceId) {
     await pc.setLocalDescription(offer);
     await iceGatheringComplete;
 
-    const qrPayload = await compressSdp(pc.localDescription.sdp);
+    const rawSdp = pc.localDescription.sdp;
+    const qrPayload = await compressSdp(rawSdp);
+    console.log(`[Signaling] Offer created, raw SDP: ${rawSdp.length} bytes, compressed: ${qrPayload.length} chars`);
 
     return {
       pc,
@@ -124,7 +120,9 @@ export async function answerOffer(scannedOfferPayload, deviceId) {
     await pc.setLocalDescription(answer);
     await iceGatheringComplete;
 
-    const qrPayload = await compressSdp(pc.localDescription.sdp);
+    const rawSdp = pc.localDescription.sdp;
+    const qrPayload = await compressSdp(rawSdp);
+    console.log(`[Signaling] Answer created, raw SDP: ${rawSdp.length} bytes, compressed: ${qrPayload.length} chars`);
 
     const dataChannel = await dataChannelReady;
 
@@ -148,13 +146,18 @@ export async function answerOffer(scannedOfferPayload, deviceId) {
 export async function completeHandshake(pc, scannedAnswerPayload) {
   try {
     const answerSdp = await decompressSdp(scannedAnswerPayload);
-    if (pc.signalingState !== "have-local-offer") {
+    const validStates = ["have-local-offer", "stable"];
+    if (!validStates.includes(pc.signalingState)) {
       throw new SignalingError(
         `Cannot set answer in state: ${pc.signalingState}`,
         "INVALID_SIGNALING_STATE"
       );
     }
+    if (pc.signalingState === "stable") {
+      console.warn("[Signaling] Already in stable state, attempting to set remote answer anyway");
+    }
     await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+    console.log("[Signaling] Handshake complete, signaling state:", pc.signalingState);
     return true;
   } catch (error) {
     if (error instanceof SignalingError) throw error;

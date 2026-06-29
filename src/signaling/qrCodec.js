@@ -1,3 +1,18 @@
+let _barcodeDetector = null;
+
+function getBarcodeDetector() {
+  if (_barcodeDetector) return _barcodeDetector;
+  if ("BarcodeDetector" in globalThis) {
+    try {
+      _barcodeDetector = new BarcodeDetector({ formats: ["qr_code"] });
+      return _barcodeDetector;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 const QR_CODE_MIME = "image/png";
 
 export function toBase64Url(buffer) {
@@ -100,14 +115,31 @@ function getQRVersion(text) {
   return 40;
 }
 
-function qrEncodeToCanvas(text, size = 400) {
+function qrEncodeToCanvas(text, size = 600) {
   const canvas = document.createElement("canvas");
-  const qr = QRCode.generate(0, text, QRCode.ErrorCorrectLevel.M);
-  const moduleCount = qr.getModuleCount();
-  const version = (moduleCount - 17) / 4;
 
-  const padding = 4;
-  const moduleSize = Math.floor(size / (moduleCount + padding * 2));
+  let qr;
+  let version;
+  for (const ecLevel of [QRCode.ErrorCorrectLevel.Q, QRCode.ErrorCorrectLevel.M]) {
+    try {
+      qr = QRCode.generate(0, text, ecLevel);
+      const mc = qr.getModuleCount();
+      version = (mc - 17) / 4;
+      if (version <= 25) break;
+    } catch {
+      continue;
+    }
+  }
+  if (!qr) {
+    qr = QRCode.generate(0, text, QRCode.ErrorCorrectLevel.L);
+    const mc = qr.getModuleCount();
+    version = (mc - 17) / 4;
+  }
+
+  const moduleCount = qr.getModuleCount();
+
+  const padding = 6;
+  const moduleSize = Math.max(2, Math.floor(size / (moduleCount + padding * 2)));
   const canvasSize = moduleSize * (moduleCount + padding * 2);
   const offset = moduleSize * padding;
 
@@ -116,6 +148,8 @@ function qrEncodeToCanvas(text, size = 400) {
 
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D context not available");
+
+  ctx.imageSmoothingEnabled = false;
 
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvasSize, canvasSize);
@@ -171,7 +205,8 @@ export async function renderQRCode(container, payload, label = "Scan this QR") {
   const infoEl = document.createElement("div");
   infoEl.className = "qr-version-info";
   const moduleCount = version * 4 + 17;
-  infoEl.textContent = `QR v${version} (${moduleCount}\u00d7${moduleCount}) \u2022 ${strPayload.length} bytes`;
+  const scannable = version <= 15 ? "✅" : version <= 25 ? "⚠️" : "❌";
+  infoEl.textContent = `${scannable} QR v${version} (${moduleCount}\u00d7${moduleCount}) \u2022 ${strPayload.length} bytes`;
   wrapper.appendChild(infoEl);
 
   wrapper.appendChild(canvasEl);
@@ -180,22 +215,29 @@ export async function renderQRCode(container, payload, label = "Scan this QR") {
   labelEl.className = "qr-label";
   labelEl.textContent = label;
   wrapper.appendChild(labelEl);
+
+  if (version > 25) {
+    const warnEl = document.createElement("p");
+    warnEl.style.cssText = "color:var(--accent-yellow);font-size:12px;text-align:center;margin-top:4px;";
+    warnEl.textContent = "QR code is dense — hold phone closer and ensure good lighting";
+    wrapper.appendChild(warnEl);
+  }
+
   container.appendChild(wrapper);
 
   return strPayload;
 }
 
 export async function scanQRCode(videoElement) {
-  if ("BarcodeDetector" in globalThis) {
-    const detector = new BarcodeDetector({ formats: ["qr_code"] });
-    try {
-      const barcodes = await detector.detect(videoElement);
-      if (barcodes.length > 0) {
-        return barcodes[0].rawValue;
-      }
-    } catch {
-      return null;
+  const detector = getBarcodeDetector();
+  if (!detector) return null;
+  try {
+    const barcodes = await detector.detect(videoElement);
+    if (barcodes.length > 0) {
+      return barcodes[0].rawValue;
     }
+  } catch {
+    return null;
   }
   return null;
 }
@@ -205,11 +247,18 @@ export function startCamera(videoElement) {
     return Promise.reject(new Error("Camera API not available"));
   }
   return navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
+    video: {
+      facingMode: "environment",
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      focusMode: "continuous",
+    },
     audio: false,
   }).then((stream) => {
     videoElement.srcObject = stream;
     videoElement.setAttribute("playsinline", "");
+    videoElement.setAttribute("autoplay", "");
+    videoElement.muted = true;
     return videoElement.play();
   });
 }
@@ -223,27 +272,32 @@ export function stopCamera(videoElement) {
 }
 
 function stripNonEssentialSdpLines(sdp) {
-  return sdp.split("\n").filter((line) => {
+  let candidateCount = 0;
+  const result = sdp.split("\n").filter((line) => {
     const trimmed = line.trim();
-    if (trimmed.startsWith("a=rtcp:")) return false;
+    if (trimmed.startsWith("a=candidate:")) {
+      candidateCount++;
+      return true;
+    }
     if (trimmed.startsWith("a=ice-pwd:")) return true;
     if (trimmed.startsWith("a=ice-ufrag:")) return true;
     if (trimmed.startsWith("a=fingerprint:")) return true;
     if (trimmed.startsWith("m=")) return true;
     if (trimmed.startsWith("c=")) return true;
-    if (trimmed.startsWith("a=group:")) return false;
-    if (trimmed.startsWith("a=msid:")) return false;
-    if (trimmed.startsWith("a=ssrc:")) return false;
-    if (trimmed.startsWith("a=rtpmap:")) return false;
-    if (trimmed.startsWith("a=fmtp:")) return false;
+    if (trimmed.startsWith("v=")) return true;
     if (trimmed.startsWith("a=sendrecv")) return true;
+    if (trimmed.startsWith("a=recvonly")) return true;
+    if (trimmed.startsWith("a=sendonly")) return true;
     if (trimmed.startsWith("a=mid:")) return true;
     if (trimmed.startsWith("o=")) return true;
     if (trimmed.startsWith("s=")) return true;
     if (trimmed.startsWith("t=")) return true;
     if (trimmed.startsWith("a=setup:")) return true;
+    if (trimmed.startsWith("a=end-of-candidates")) return true;
     return false;
   }).join("\n");
+  console.log(`[SDP] Stripped SDP: ${result.length} bytes, ${candidateCount} candidates`);
+  return result;
 }
 
 export function compressSdp(sdp) {
