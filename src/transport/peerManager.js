@@ -189,7 +189,6 @@ export class PeerManager extends EventTarget {
       return false;
     }
     if (record.dataChannel.readyState !== "open") {
-      this._handleDisconnect(peerId, CONNECTION_STATE.DISCONNECTED);
       return false;
     }
     const serialized = JSON.stringify(payload);
