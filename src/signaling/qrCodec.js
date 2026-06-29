@@ -100,11 +100,10 @@ function qrEncodeToCanvas(text, size = 400) {
 
 export async function renderQRCode(container, payload, label = "Scan this QR") {
   const strPayload = typeof payload === "string" ? payload : JSON.stringify(payload);
-  const compressed = await compressPayload(strPayload);
   const maxSegmentLength = 120;
   const segments = [];
-  for (let i = 0; i < compressed.length; i += maxSegmentLength) {
-    segments.push(compressed.slice(i, i + maxSegmentLength));
+  for (let i = 0; i < strPayload.length; i += maxSegmentLength) {
+    segments.push(strPayload.slice(i, i + maxSegmentLength));
   }
 
   container.innerHTML = "";
@@ -112,7 +111,7 @@ export async function renderQRCode(container, payload, label = "Scan this QR") {
   wrapper.className = "qr-display";
 
   if (segments.length === 1) {
-    const canvas = qrEncodeToCanvas(compressed);
+    const canvas = qrEncodeToCanvas(strPayload);
     canvas.className = "qr-canvas";
     wrapper.appendChild(canvas);
   } else {
@@ -154,7 +153,7 @@ export async function renderQRCode(container, payload, label = "Scan this QR") {
   wrapper.appendChild(labelEl);
   container.appendChild(wrapper);
 
-  return compressed;
+  return strPayload;
 }
 
 export async function scanQRCode(videoElement) {
@@ -163,9 +162,7 @@ export async function scanQRCode(videoElement) {
     try {
       const barcodes = await detector.detect(videoElement);
       if (barcodes.length > 0) {
-        const rawValue = barcodes[0].rawValue;
-        const decompressed = await decompressPayload(rawValue);
-        return JSON.parse(decompressed);
+        return barcodes[0].rawValue;
       }
     } catch {
       return null;
