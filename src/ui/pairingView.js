@@ -20,6 +20,17 @@ const SCAN_MODE = Object.freeze({
   ANSWER: "answer",
 });
 
+// Maps the pairing-state glyphs to Lucide-style inline SVG icons so the
+// pairing screen stays consistent with the rest of the command-center UI
+// (no emoji icons). Purely presentational — pairing logic is unchanged.
+const _ic = (paths) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const PAIRING_ICON_SVG = Object.freeze({
+  "📡": _ic('<path d="M4.9 16.1A10 10 0 0 1 16.1 4.9"/><path d="M7.8 13.2a6 6 0 0 1 6.4-6.4"/><circle cx="12" cy="12" r="2"/><path d="m13.4 13.4 6.6 6.6"/><path d="M16 18h.01"/>'),
+  "📤": _ic('<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>'),
+  "📥": _ic('<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>'),
+});
+
 export class PairingView extends EventTarget {
   constructor(peerManager, keyManager) {
     super();
@@ -340,7 +351,11 @@ export class PairingView extends EventTarget {
     const iconEl = document.querySelector("#pairing-state .state-icon");
     const labelEl = document.querySelector("#pairing-state .state-label");
     const descEl = document.querySelector("#pairing-state .state-desc");
-    if (iconEl) iconEl.textContent = icon;
+    if (iconEl) {
+      const svg = PAIRING_ICON_SVG[icon];
+      if (svg) iconEl.innerHTML = svg;
+      else iconEl.textContent = icon;
+    }
     if (labelEl) labelEl.textContent = label;
     if (descEl) descEl.textContent = desc;
   }
