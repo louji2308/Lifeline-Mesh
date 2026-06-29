@@ -314,8 +314,7 @@ function stripNonEssentialSdpLines(sdp) {
 }
 
 export function compressSdp(sdp) {
-  const stripped = stripNonEssentialSdpLines(sdp);
-  return compressPayload(stripped);
+  return compressPayload(sdp);
 }
 
 export function decompressSdp(payload) {
