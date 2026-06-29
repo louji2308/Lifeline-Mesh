@@ -36,6 +36,15 @@ export async function createOffer(deviceId) {
       id: 0,
     });
 
+    pc.onconnectionstatechange = () =>
+      console.log(`[Signaling:Offer] connectionState: ${pc.connectionState}`);
+    pc.oniceconnectionstatechange = () =>
+      console.log(`[Signaling:Offer] iceConnectionState: ${pc.iceConnectionState}`);
+    dataChannel.onopen = () =>
+      console.log("[Signaling:Offer] dataChannel open");
+    dataChannel.onerror = (e) =>
+      console.error("[Signaling:Offer] dataChannel error:", e);
+
     const iceGatheringComplete = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         resolve();
@@ -98,6 +107,15 @@ export async function answerOffer(scannedOfferPayload, deviceId) {
       negotiated: true,
       id: 0,
     });
+
+    pc.onconnectionstatechange = () =>
+      console.log(`[Signaling:Answer] connectionState: ${pc.connectionState}`);
+    pc.oniceconnectionstatechange = () =>
+      console.log(`[Signaling:Answer] iceConnectionState: ${pc.iceConnectionState}`);
+    dataChannel.onopen = () =>
+      console.log("[Signaling:Answer] dataChannel open");
+    dataChannel.onerror = (e) =>
+      console.error("[Signaling:Answer] dataChannel error:", e);
 
     await pc.setRemoteDescription({ type: "offer", sdp: offerSdp });
 

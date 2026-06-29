@@ -1,4 +1,4 @@
-const CACHE_NAME = "lifeline-mesh-v9";
+const CACHE_NAME = "lifeline-mesh-v10";
 
 const ASSET_PATHS = [
   "/",
