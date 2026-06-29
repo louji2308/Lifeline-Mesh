@@ -38,8 +38,8 @@ export function fromBase64Url(str) {
 async function compressWithStream(bytes) {
   const cs = new CompressionStream("deflate-raw");
   const writer = cs.writable.getWriter();
-  writer.write(bytes);
-  writer.close();
+  await writer.write(bytes);
+  await writer.close();
   const reader = cs.readable.getReader();
   const chunks = [];
   while (true) {
@@ -60,8 +60,8 @@ async function compressWithStream(bytes) {
 async function decompressWithStream(compressed) {
   const ds = new DecompressionStream("deflate-raw");
   const writer = ds.writable.getWriter();
-  writer.write(compressed);
-  writer.close();
+  await writer.write(compressed);
+  await writer.close();
   const reader = ds.readable.getReader();
   const chunks = [];
   while (true) {
