@@ -108,7 +108,9 @@ export async function decompressPayload(payloadStr) {
 function getQRVersion(text) {
   for (let v = 1; v <= 40; v++) {
     try {
-      qrcode.generate(v, text, qrcode.ErrorCorrectLevel.M);
+      const qr = qrcode(v, 'M');
+      qr.addData(text);
+      qr.make();
       return v;
     } catch {}
   }
@@ -120,9 +122,11 @@ function qrEncodeToCanvas(text, size = 600) {
 
   let qr;
   let version;
-  for (const ecLevel of [qrcode.ErrorCorrectLevel.Q, qrcode.ErrorCorrectLevel.M]) {
+  for (const ecLevel of ['Q', 'M']) {
     try {
-      qr = qrcode.generate(0, text, ecLevel);
+      qr = qrcode(0, ecLevel);
+      qr.addData(text);
+      qr.make();
       const mc = qr.getModuleCount();
       version = (mc - 17) / 4;
       if (version <= 25) break;
@@ -131,7 +135,9 @@ function qrEncodeToCanvas(text, size = 600) {
     }
   }
   if (!qr) {
-    qr = qrcode.generate(0, text, qrcode.ErrorCorrectLevel.L);
+    qr = qrcode(0, 'L');
+    qr.addData(text);
+    qr.make();
     const mc = qr.getModuleCount();
     version = (mc - 17) / 4;
   }
@@ -171,8 +177,10 @@ function getDataCapacity(version) {
   const text = "A".repeat(5000);
   for (let v = version; v >= 1; v--) {
     try {
-      qrcode.generate(v, text.slice(0, 4000), qrcode.ErrorCorrectLevel.M);
-    } catch (e) {
+      const qr = qrcode(v, 'M');
+      qr.addData(text.slice(0, 4000));
+      qr.make();
+    } catch {
       return v + 1 <= 40 ? getDataCapacity(v + 1) : 0;
     }
   }
@@ -183,7 +191,9 @@ function binarySearchCapacity(version, low, high) {
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
     try {
-      qrcode.generate(version, "A".repeat(mid), qrcode.ErrorCorrectLevel.M);
+      const qr = qrcode(version, 'M');
+      qr.addData("A".repeat(mid));
+      qr.make();
       low = mid;
     } catch {
       high = mid - 1;
