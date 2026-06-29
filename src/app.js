@@ -46,9 +46,9 @@ class LifeLineMeshApp {
       this._initPeerManagerEvents();
       await this._rehydrateState();
       this._initControlMessageHandler();
-      this._initConnectionManager();
       this._initRouter();
       this._initUI();
+      this._initConnectionManager();
       this._initNavigation();
       this._initConnectivityBanner();
       this._initBatteryMonitoring();
