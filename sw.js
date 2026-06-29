@@ -1,6 +1,6 @@
-const CACHE_NAME = "lifeline-mesh-v3";
+const CACHE_NAME = "lifeline-mesh-v4";
 
-const ASSETS = [
+const ASSET_PATHS = [
   "/",
   "/index.html",
   "/manifest.json",
@@ -28,10 +28,19 @@ const ASSETS = [
   "/icons/icon-512.svg",
 ];
 
+function resolveAssetPath(relativePath) {
+  const base = self.location.pathname.replace(/\/[^/]*$/, "/");
+  if (base === "/") return relativePath;
+  const cleanBase = base.replace(/\/$/, "");
+  const cleanPath = relativePath.replace(/^\//, "");
+  return `${cleanBase}/${cleanPath}`;
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS);
+      const urls = ASSET_PATHS.map(resolveAssetPath);
+      return cache.addAll(urls);
     })
   );
   self.skipWaiting();

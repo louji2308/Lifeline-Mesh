@@ -710,7 +710,8 @@ const app = new LifeLineMeshApp();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").then((reg) => {
+    const swPath = new URL("../sw.js", import.meta.url).href;
+    navigator.serviceWorker.register(swPath).then((reg) => {
       console.log("[LifeLine] ServiceWorker registered:", reg.scope);
     }).catch((err) => {
       console.warn("[LifeLine] ServiceWorker registration failed:", err.message);
