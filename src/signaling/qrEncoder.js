@@ -44,13 +44,11 @@ function rsEncode(data, eccCount) {
   return remainder.slice(data.length);
 }
 
-const VERSION_TABLE = {
-  1: { size: 21, totalCodewords: 26, eccCodewords: { L: 7, M: 10, Q: 13, H: 17 }, dataCodewords: { L: 19, M: 16, Q: 13, H: 9 }, alignment: [] },
-  2: { size: 25, totalCodewords: 44, eccCodewords: { L: 10, M: 16, Q: 22, H: 28 }, dataCodewords: { L: 34, M: 28, Q: 22, H: 16 }, alignment: [6, 18] },
-  3: { size: 29, totalCodewords: 70, eccCodewords: { L: 15, M: 26, Q: 36, H: 44 }, dataCodewords: { L: 55, M: 44, Q: 34, H: 26 }, alignment: [6, 22] },
-  4: { size: 33, totalCodewords: 100, eccCodewords: { L: 20, M: 36, Q: 52, H: 64 }, dataCodewords: { L: 80, M: 64, Q: 48, H: 36 }, alignment: [6, 26] },
-  5: { size: 37, totalCodewords: 134, eccCodewords: { L: 26, M: 48, Q: 72, H: 88 }, dataCodewords: { L: 108, M: 86, Q: 62, H: 46 }, alignment: [6, 30] },
-  6: { size: 41, totalCodewords: 172, eccCodewords: { L: 36, M: 64, Q: 96, H: 112 }, dataCodewords: { L: 136, M: 108, Q: 76, H: 60 }, alignment: [6, 34] },
+const ECC_TABLE = {
+  M: {
+    cwPerBlock: [null, 10,16,26,18,24,16,18,22,22,26,30,22,22,24,24,28,28,26,26,26,26,28,28,28,28],
+    numBlocks:  [null, 1,1,1,2,2,4,4,4,5,5,5,8,9,9,10,10,11,13,14,16,17,17,18,20,21],
+  },
 };
 
 const FORMAT_MASK = 0x5412;
@@ -59,20 +57,48 @@ const ECC_FORMAT = {
   M: [0x00, 0x5412, 0x2a24, 0x7e36],
 };
 
-const BIT_COUNT_TABLE = {
-  byte: { 1: 8, 2: 16, 3: 16, 4: 16, 5: 16, 6: 16 },
-};
-
-function getMinVersion(dataLen, eccLevel) {
-  for (let v = 1; v <= 6; v++) {
-    const info = VERSION_TABLE[v];
-    if (dataLen <= info.dataCodewords[eccLevel]) return v;
+function getNumRawDataModules(ver) {
+  let result = (16 * ver + 128) * ver + 64;
+  if (ver >= 2) {
+    const numAlign = Math.floor(ver / 7) + 2;
+    result -= (25 * numAlign - 10) * numAlign - 55;
+    if (ver >= 7) result -= 36;
   }
-  return 6;
+  return result;
+}
+
+function getNumDataCodewords(ver) {
+  const raw = getNumRawDataModules(ver);
+  const totalCW = Math.floor(raw / 8);
+  const eccCW = ECC_TABLE.M.cwPerBlock[ver] * ECC_TABLE.M.numBlocks[ver];
+  return totalCW - eccCW;
+}
+
+function getAlignmentPositions(ver) {
+  if (ver === 1) return [];
+  const numAlign = Math.floor(ver / 7) + 2;
+  const step = Math.floor((ver * 8 + numAlign * 3 + 5) / (numAlign * 4 - 4)) * 2;
+  const result = [];
+  for (let i = numAlign - 1, pos = ver * 4 + 10; i >= 1; i--, pos -= step) {
+    result[i] = pos;
+  }
+  result[0] = 6;
+  return result;
+}
+
+function getBitCount(ver) {
+  return ver >= 10 ? 16 : 8;
+}
+
+function getMinVersion(dataLen) {
+  for (let v = 1; v <= 25; v++) {
+    if (dataLen <= getNumDataCodewords(v)) return v;
+  }
+  return 25;
 }
 
 function encodeByteMode(data, version) {
-  const bitCount = BIT_COUNT_TABLE.byte[version] || 16;
+  const bitCount = getBitCount(version);
   const dataBits = [];
   const modeBits = [0, 1, 0, 0];
   dataBits.push(...modeBits);
@@ -132,9 +158,7 @@ function placeDarkModule(matrix) {
   matrix[size - 8][8] = 1;
 }
 
-function placeAlignment(matrix, version) {
-  const info = VERSION_TABLE[version];
-  const centers = info.alignment;
+function placeAlignment(matrix, centers) {
   if (centers.length < 2) return;
   for (const cy of centers) {
     for (const cx of centers) {
@@ -151,6 +175,28 @@ function placeAlignment(matrix, version) {
           }
         }
       }
+    }
+  }
+}
+
+function calculateVersionBits(version) {
+  let d = version << 12;
+  const genPoly = 0x1F25;
+  for (let i = 17; i >= 12; i--) {
+    if ((d >> i) & 1) d ^= genPoly << (i - 12);
+  }
+  return (version << 12) | d;
+}
+
+function placeVersionInfo(matrix, version) {
+  const size = matrix.length;
+  let bits = calculateVersionBits(version);
+  for (let i = 0; i < 6; i++) {
+    for (let j = 0; j < 3; j++) {
+      const k = size - 11 + j;
+      const bit = (bits >> (i * 3 + j)) & 1;
+      matrix[i][k] = bit;
+      matrix[k][i] = bit;
     }
   }
 }
@@ -286,10 +332,13 @@ function placeData(matrix, dataBits, eccBits) {
 export function createQRMatrix(text, eccLevel = "M") {
   const encoder = new TextEncoder();
   const dataBytes = encoder.encode(text);
-  const version = getMinVersion(dataBytes.length, eccLevel);
-  const info = VERSION_TABLE[version];
-  const eccCount = info.eccCodewords[eccLevel];
-  const dataCount = info.dataCodewords[eccLevel];
+  const version = getMinVersion(dataBytes.length);
+  const size = version * 4 + 17;
+  const eccCount = ECC_TABLE[eccLevel].cwPerBlock[version];
+  const numBlocks = ECC_TABLE[eccLevel].numBlocks[version];
+  const totalEcc = eccCount * numBlocks;
+  const dataCount = getNumDataCodewords(version);
+  const centers = getAlignmentPositions(version);
 
   const dataBits = encodeByteMode(dataBytes, version);
   const dataCodewords = bitsToCodewords(dataBits, dataCount);
@@ -301,9 +350,8 @@ export function createQRMatrix(text, eccLevel = "M") {
     padded[i] = paddingBytes[(i - dataCodewords.length) % 2];
   }
 
-  const eccCodewords = rsEncode(padded, eccCount);
+  const eccCodewords = rsEncode(padded, totalEcc);
 
-  const size = info.size;
   const matrix = [];
   for (let r = 0; r < size; r++) {
     matrix[r] = new Array(size).fill(null);
@@ -312,9 +360,10 @@ export function createQRMatrix(text, eccLevel = "M") {
   placeFinder(matrix, 0, 0);
   placeFinder(matrix, size - 7, 0);
   placeFinder(matrix, 0, size - 7);
-  placeAlignment(matrix, version);
+  placeAlignment(matrix, centers);
   placeTiming(matrix);
   placeDarkModule(matrix);
+  if (version >= 7) placeVersionInfo(matrix, version);
 
   const dataBitArr = [];
   for (const byte of padded) {
@@ -341,6 +390,18 @@ export function createQRMatrix(text, eccLevel = "M") {
   }
 
   return bestMatrix;
+}
+
+export function getQRLabel(version) {
+  return `QR v${version} (${version * 4 + 17}\u00d7${version * 4 + 17})`;
+}
+
+export function getQRDataCodewords(version) {
+  return getNumDataCodewords(version);
+}
+
+export function getMinVersionForLength(len) {
+  return getMinVersion(len);
 }
 
 export function renderQRToCanvas(text, canvas, size = 400) {

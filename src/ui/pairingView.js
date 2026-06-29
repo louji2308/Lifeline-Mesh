@@ -1,5 +1,5 @@
 import { createOffer, answerOffer, completeHandshake, SignalingError } from "../signaling/qrSignaling.js";
-import { renderQRCode, startCamera, stopCamera, scanQRCode, QRFrameScanner } from "../signaling/qrCodec.js";
+import { renderQRCode, startCamera, stopCamera, scanQRCode } from "../signaling/qrCodec.js";
 import { generateTempId } from "../transport/peerManager.js";
 import {
   getLocalIPs, shareConnection, showCopyableLink, createConnectionURL,
@@ -33,9 +33,6 @@ export class PairingView extends EventTarget {
     this._isInitiator = false;
     this._scanMode = null;
     this._currentQrPayload = null;
-    this._currentPairingCode = null;
-    this._qrFrameScanner = new QRFrameScanner();
-    this._currentPairingCode = null;
   }
 
   mount() {
@@ -138,7 +135,6 @@ export class PairingView extends EventTarget {
 
   async _startCameraScan(statusText) {
     try {
-      this._qrFrameScanner.reset();
       this._renderState(PAIRING_STATE.SCANNING);
       const video = document.getElementById("scanner-video");
       if (!video) return;
@@ -148,36 +144,25 @@ export class PairingView extends EventTarget {
 
       await startCamera(video);
 
+      if (!("BarcodeDetector" in globalThis)) {
+        if (scanStatus) {
+          scanStatus.innerHTML = 'QR scanning not supported on this browser.<br><b>Copy the Connection Link</b> from the other device and paste it below instead.';
+        }
+        const lanInput = document.getElementById("lan-connect-input");
+        if (lanInput) lanInput.classList.remove("hidden");
+        return;
+      }
+
       this._scanInterval = setInterval(async () => {
         try {
           const scanned = await scanQRCode(video);
-          if (!scanned) {
-            if (!("BarcodeDetector" in globalThis)) {
-              const status = document.getElementById("scan-status");
-              if (status && !status.dataset.fallbackShown) {
-                status.dataset.fallbackShown = "1";
-                status.innerHTML = 'QR scanning not supported on this browser.<br>Use <b>Copy Connection Link</b> from the other device instead.';
-              }
-            }
-            return;
-          }
+          if (!scanned) return;
 
-          const result = this._qrFrameScanner.process(scanned);
-          if (!result.complete) {
-            const status = document.getElementById("scan-status");
-            if (status) status.textContent = `Scanning frames: ${result.progress}`;
-            return;
-          }
-
-          const rem = document.querySelector('[data-auto-interval]');
-          if (rem) {
-            clearInterval(rem.dataset.autoInterval);
-          }
-
+          this._stopScanning();
           if (this._scanMode === SCAN_MODE.OFFER) {
-            this._handleScannedOffer(result.data);
+            this._handleScannedOffer(scanned);
           } else if (this._scanMode === SCAN_MODE.ANSWER) {
-            this._handleScannedAnswer(result.data);
+            this._handleScannedAnswer(scanned);
           }
         } catch {
         }
@@ -290,6 +275,7 @@ export class PairingView extends EventTarget {
 
   _cleanup() {
     this._stopScanning();
+    this._hideLANInput();
     if (this._currentPc) {
       try {
         if (this._currentPc.signalingState !== "closed") {
