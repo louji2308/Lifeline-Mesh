@@ -48,6 +48,23 @@ export async function shareConnection(sdpPayload) {
   return "fallback";
 }
 
+export async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  }
+}
+
 export function showCopyableLink(container, url) {
   container.innerHTML = `
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">
@@ -55,18 +72,31 @@ export function showCopyableLink(container, url) {
     </div>
     <input id="connection-link-input" type="text" readonly
       value="${url.replace(/"/g, "&quot;")}"
-      style="width:100%;padding:10px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary);font-size:12px;font-family:monospace;word-break:break-all;"
-      onclick="this.select();navigator.clipboard?.writeText(this.value).catch(()=>{})">
+      style="width:100%;padding:10px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary);font-size:12px;font-family:monospace;word-break:break-all;">
+    <button id="connection-copy-btn" class="btn btn-primary w-full mt-8" style="padding:10px;">
+      Copy to Clipboard
+    </button>
     <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
-      Tap the link above to select, then copy. Or use the Share button below.
+      Tap Copy above, then paste into the other device's "Connect via Code" input.
     </div>
   `;
   const input = document.getElementById("connection-link-input");
-  if (input) {
-    setTimeout(() => {
-      input.focus();
+  const copyBtn = document.getElementById("connection-copy-btn");
+  if (input && copyBtn) {
+    const doCopy = async () => {
       input.select();
-    }, 100);
+      const ok = await copyToClipboard(url);
+      if (ok) {
+        const orig = copyBtn.textContent;
+        copyBtn.textContent = "Copied!";
+        copyBtn.style.background = "var(--accent-green)";
+        setTimeout(() => {
+          copyBtn.textContent = orig;
+          copyBtn.style.background = "";
+        }, 2000);
+      }
+    };
+    copyBtn.addEventListener("click", doCopy);
   }
 }
 

@@ -3,7 +3,7 @@ import { renderQRCode, startCamera, stopCamera, scanQRCode } from "../signaling/
 import { generateTempId } from "../transport/peerManager.js";
 import {
   getLocalIPs, shareConnection, showCopyableLink, createConnectionURL,
-  renderLANInfo,
+  copyToClipboard, renderLANInfo,
 } from "../signaling/lanDiscovery.js";
 
 export const PAIRING_STATE = Object.freeze({
@@ -51,6 +51,7 @@ export class PairingView extends EventTarget {
     document.getElementById("btn-show-qr")?.addEventListener("click", () => this._startOfferFlow());
     document.getElementById("btn-scan-qr")?.addEventListener("click", () => this._startScanFlow());
     document.getElementById("btn-scan-response")?.addEventListener("click", () => this._startAnswerScan());
+    document.getElementById("btn-paste-answer")?.addEventListener("click", () => this._showLANInput(true));
     document.getElementById("btn-cancel-pairing")?.addEventListener("click", () => this._goToMesh());
     document.getElementById("btn-qr-done")?.addEventListener("click", () => this._goToMesh());
     document.getElementById("btn-cancel-scan")?.addEventListener("click", () => this._cancelScan());
@@ -102,6 +103,14 @@ export class PairingView extends EventTarget {
           scanResponseBtn.classList.remove("hidden");
         } else {
           scanResponseBtn.classList.add("hidden");
+        }
+      }
+      const pasteAnswerBtn = document.getElementById("btn-paste-answer");
+      if (pasteAnswerBtn) {
+        if (this._isInitiator) {
+          pasteAnswerBtn.classList.remove("hidden");
+        } else {
+          pasteAnswerBtn.classList.add("hidden");
         }
       }
 
@@ -232,6 +241,10 @@ export class PairingView extends EventTarget {
       if (scanResponseBtn) {
         scanResponseBtn.classList.add("hidden");
       }
+      const pasteAnswerBtn2 = document.getElementById("btn-paste-answer");
+      if (pasteAnswerBtn2) {
+        pasteAnswerBtn2.classList.add("hidden");
+      }
 
       this._currentPc.onconnectionstatechange = () => {
         if (this._currentPc.connectionState === "connected") {
@@ -309,6 +322,8 @@ export class PairingView extends EventTarget {
   _cleanup() {
     this._stopScanning();
     this._hideLANInput();
+    const pasteBtn = document.getElementById("btn-paste-answer");
+    if (pasteBtn) pasteBtn.classList.add("hidden");
     if (this._currentPc) {
       try {
         if (this._currentPc.signalingState !== "closed") {
@@ -415,15 +430,30 @@ export class PairingView extends EventTarget {
     renderLANInfo(card, ips);
   }
 
-  _showLANInput() {
+  _showLANInput(fromAnswer) {
     document.getElementById("pairing-actions")?.classList.add("hidden");
+    document.getElementById("qr-output")?.classList.add("hidden");
     document.getElementById("lan-connect-input")?.classList.remove("hidden");
+    if (fromAnswer) {
+      const label = document.querySelector("#lan-connect-input .section-title");
+      if (label) label.textContent = "Paste Answer Link";
+      const desc = document.querySelector("#lan-connect-input p");
+      if (desc) desc.textContent = "Paste the answer link you received from the other device to complete the connection.";
+    }
   }
 
   _hideLANInput() {
     document.getElementById("lan-connect-input")?.classList.add("hidden");
-    document.getElementById("pairing-actions")?.classList.remove("hidden");
+    if (this._state === PAIRING_STATE.SHOWING_QR) {
+      document.getElementById("qr-output")?.classList.remove("hidden");
+    } else {
+      document.getElementById("pairing-actions")?.classList.remove("hidden");
+    }
     document.getElementById("lan-connect-text").value = "";
+    const label = document.querySelector("#lan-connect-input .section-title");
+    if (label) label.textContent = "Enter Connection Code";
+    const desc = document.querySelector("#lan-connect-input p");
+    if (desc) desc.textContent = "Paste the pairing code or connection link you received from the other device.";
   }
 
   async _handleLANConnect() {
@@ -463,6 +493,16 @@ export class PairingView extends EventTarget {
             this._onPeerConnected(this._currentPc, this._currentDataChannel);
           }
         };
+        const answerUrl = createConnectionURL(result.qrPayload);
+        const ok = await copyToClipboard(answerUrl);
+        const linkContainer = document.getElementById("lan-info-card");
+        if (linkContainer) {
+          showCopyableLink(linkContainer, answerUrl);
+        }
+        this._updateProgress(
+          ok ? "Link copied!" : "Share this link",
+          "Paste this link into the other device's 'Connect via Code' to complete the connection"
+        );
       }
     } catch (error) {
       this._renderState(PAIRING_STATE.FAILED);
@@ -483,9 +523,13 @@ export class PairingView extends EventTarget {
   async _handleCopyLink() {
     if (!this._currentQrPayload) return;
     const url = createConnectionURL(this._currentQrPayload);
+    const ok = await copyToClipboard(url);
     const linkContainer = document.getElementById("lan-info-card");
     if (linkContainer) {
       showCopyableLink(linkContainer, url);
+    }
+    if (ok) {
+      this._updateProgress("Copied!", "Connection link copied to clipboard");
     }
   }
 
@@ -520,6 +564,8 @@ export class PairingView extends EventTarget {
 
       const scanResponseBtn = document.getElementById("btn-scan-response");
       if (scanResponseBtn) scanResponseBtn.classList.add("hidden");
+      const pasteAnswerBtn3 = document.getElementById("btn-paste-answer");
+      if (pasteAnswerBtn3) pasteAnswerBtn3.classList.add("hidden");
 
       this._currentPc.onconnectionstatechange = () => {
         if (this._currentPc.connectionState === "connected") {
