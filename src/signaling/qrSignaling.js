@@ -1,13 +1,18 @@
 import { compressSdp, decompressSdp } from "./qrCodec.js";
 
-const STUN_SERVERS = [
+const ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
   { urls: "stun:stun2.l.google.com:19302" },
+  {
+    urls: "turn:openrelay.metered.ca:443",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
 ];
 
 const RTC_CONFIG = {
-  iceServers: STUN_SERVERS,
+  iceServers: ICE_SERVERS,
   iceCandidatePoolSize: 0,
   iceTransportPolicy: "all",
   bundlePolicy: "max-bundle",

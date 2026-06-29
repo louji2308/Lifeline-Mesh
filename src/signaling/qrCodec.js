@@ -1,5 +1,3 @@
-import { renderQRToCanvas, getMinVersionForLength, getQRDataCodewords, getQRLabel } from "./qrEncoder.js";
-
 const QR_CODE_MIME = "image/png";
 
 export function toBase64Url(buffer) {
@@ -92,17 +90,79 @@ export async function decompressPayload(payloadStr) {
   return new TextDecoder().decode(raw);
 }
 
+function getQRVersion(text) {
+  for (let v = 1; v <= 40; v++) {
+    try {
+      QRCode.generate(v, text, QRCode.ErrorCorrectLevel.M);
+      return v;
+    } catch {}
+  }
+  return 40;
+}
+
 function qrEncodeToCanvas(text, size = 400) {
   const canvas = document.createElement("canvas");
-  renderQRToCanvas(text, canvas, size);
+  const qr = QRCode.generate(0, text, QRCode.ErrorCorrectLevel.M);
+  const moduleCount = qr.getModuleCount();
+  const version = (moduleCount - 17) / 4;
+
+  const padding = 4;
+  const moduleSize = Math.floor(size / (moduleCount + padding * 2));
+  const canvasSize = moduleSize * (moduleCount + padding * 2);
+  const offset = moduleSize * padding;
+
+  canvas.width = canvasSize;
+  canvas.height = canvasSize;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas 2D context not available");
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvasSize, canvasSize);
+
+  ctx.fillStyle = "#000000";
+  for (let r = 0; r < moduleCount; r++) {
+    for (let c = 0; c < moduleCount; c++) {
+      if (qr.isDark(r, c)) {
+        ctx.fillRect(offset + c * moduleSize, offset + r * moduleSize, moduleSize, moduleSize);
+      }
+    }
+  }
+
+  canvas.dataset.qrVersion = version;
   return canvas;
+}
+
+function getDataCapacity(version) {
+  const text = "A".repeat(5000);
+  for (let v = version; v >= 1; v--) {
+    try {
+      QRCode.generate(v, text.slice(0, 4000), QRCode.ErrorCorrectLevel.M);
+    } catch (e) {
+      return v + 1 <= 40 ? getDataCapacity(v + 1) : 0;
+    }
+  }
+  return binarySearchCapacity(version, 1, 5000);
+}
+
+function binarySearchCapacity(version, low, high) {
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    try {
+      QRCode.generate(version, "A".repeat(mid), QRCode.ErrorCorrectLevel.M);
+      low = mid;
+    } catch {
+      high = mid - 1;
+    }
+  }
+  return low;
 }
 
 export async function renderQRCode(container, payload, label = "Scan this QR") {
   const strPayload = typeof payload === "string" ? payload : JSON.stringify(payload);
-  const version = getMinVersionForLength(strPayload.length);
   const canvasEl = qrEncodeToCanvas(strPayload);
   canvasEl.className = "qr-canvas";
+  const version = parseInt(canvasEl.dataset.qrVersion, 10);
 
   container.innerHTML = "";
   const wrapper = document.createElement("div");
@@ -110,7 +170,8 @@ export async function renderQRCode(container, payload, label = "Scan this QR") {
 
   const infoEl = document.createElement("div");
   infoEl.className = "qr-version-info";
-  infoEl.textContent = `${getQRLabel(version)} \u2022 ${getQRDataCodewords(version)} byte capacity`;
+  const moduleCount = version * 4 + 17;
+  infoEl.textContent = `QR v${version} (${moduleCount}\u00d7${moduleCount}) \u2022 ${strPayload.length} bytes`;
   wrapper.appendChild(infoEl);
 
   wrapper.appendChild(canvasEl);

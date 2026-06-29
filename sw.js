@@ -1,4 +1,4 @@
-const CACHE_NAME = "lifeline-mesh-v5";
+const CACHE_NAME = "lifeline-mesh-v6";
 
 const ASSET_PATHS = [
   "/",
@@ -8,7 +8,7 @@ const ASSET_PATHS = [
   "/src/schema.js",
   "/src/signaling/qrSignaling.js",
   "/src/signaling/qrCodec.js",
-  "/src/signaling/qrEncoder.js",
+  "/src/signaling/qrcode-lib.js",
   "/src/signaling/lanDiscovery.js",
   "/src/transport/peerManager.js",
   "/src/transport/dataChannel.js",
