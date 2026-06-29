@@ -476,11 +476,11 @@ export class PairingView extends EventTarget {
       }
     }
     this._hideLANInput();
-    this._renderState(PAIRING_STATE.CONNECTING);
-    this._updateProgress("Connecting...", "Establishing secure P2P connection");
     try {
       const deviceId = this.keyManager.getFingerprint();
       if (this._currentPc && ["have-local-offer", "stable"].includes(this._currentPc.signalingState)) {
+        this._renderState(PAIRING_STATE.CONNECTING);
+        this._updateProgress("Completing handshake...", "Establishing secure P2P connection");
         await completeHandshake(this._currentPc, payload);
         this._updateProgress("Handshake complete", "Waiting for connection...");
       } else {
@@ -493,16 +493,26 @@ export class PairingView extends EventTarget {
             this._onPeerConnected(this._currentPc, this._currentDataChannel);
           }
         };
+        this._renderState(PAIRING_STATE.SHOWING_QR);
+        const container = document.getElementById("qr-container");
+        if (container) {
+          await renderQRCode(container, result.qrPayload, "Show this QR to the other device to complete pairing");
+        }
+        this._showLANInfo(result.qrPayload);
         const answerUrl = createConnectionURL(result.qrPayload);
         const ok = await copyToClipboard(answerUrl);
         const linkContainer = document.getElementById("lan-info-card");
         if (linkContainer) {
           showCopyableLink(linkContainer, answerUrl);
         }
-        this._updateProgress(
-          ok ? "Link copied!" : "Share this link",
-          "Paste this link into the other device's 'Connect via Code' to complete the connection"
-        );
+        const pasteBtn = document.getElementById("btn-paste-answer");
+        if (pasteBtn) pasteBtn.classList.add("hidden");
+        const scanBtn = document.getElementById("btn-scan-response");
+        if (scanBtn) scanBtn.classList.add("hidden");
+        const copyBtn = document.getElementById("btn-copy-link");
+        if (copyBtn) copyBtn.classList.remove("hidden");
+        const shareBtn = document.getElementById("btn-share-nearby");
+        if (shareBtn) shareBtn.classList.remove("hidden");
       }
     } catch (error) {
       this._renderState(PAIRING_STATE.FAILED);
