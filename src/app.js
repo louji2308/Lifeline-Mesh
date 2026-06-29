@@ -402,10 +402,28 @@ class LifeLineMeshApp {
     }
   }
 
+  async _verifyMessageSignature(message) {
+    if (!message.signature) return null;
+    const signingKey = this._peerSigningKeyMap.get(message.senderId);
+    if (!signingKey) return null;
+    const dataToVerify = message.id + message.senderId + message.ciphertext;
+    try {
+      return await verifySignature(signingKey, message.signature, dataToVerify);
+    } catch {
+      return false;
+    }
+  }
+
   async _handleAutoDecrypt(message) {
     try {
       if (message.plaintext && (!message.ciphertext || message.ciphertext === "")) {
         message.decryptedText = message.plaintext;
+        return;
+      }
+
+      const sigValid = await this._verifyMessageSignature(message);
+      if (sigValid === false) {
+        message.decryptedText = "[⚠️ Tampered — signature invalid]";
         return;
       }
 
@@ -417,7 +435,9 @@ class LifeLineMeshApp {
         const decrypted = await decryptPayload(sharedKey, message.ciphertext, message.iv);
         message.decryptedText = typeof decrypted === "string" ? decrypted : JSON.stringify(decrypted);
       } else if (message.ciphertext && message.ciphertext !== "") {
-        message.decryptedText = "[🔒 Encrypted]";
+        message.decryptedText = sigValid === null
+          ? "[🔒 Encrypted — sender unknown]"
+          : "[🔒 Encrypted]";
       } else {
         message.decryptedText = message.plaintext || "[No content]";
       }

@@ -1,4 +1,4 @@
-import { createOffer, answerOffer, completeHandshake, SignalingError } from "../signaling/qrSignaling.js";
+import { createOffer, answerOffer, SignalingError } from "../signaling/qrSignaling.js";
 import { renderQRCode, startCamera, stopCamera, scanQRCode } from "../signaling/qrCodec.js";
 import { generateTempId } from "../transport/peerManager.js";
 
