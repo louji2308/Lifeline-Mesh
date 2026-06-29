@@ -7,7 +7,7 @@ export class ChatView {
     this.onSendMessage = onSendMessage;
     this._deviceId = deviceId;
     this._renderedIds = new Set();
-    this._selectedPriority = PRIORITY.SOS;
+    this._selectedPriority = PRIORITY.NORMAL;
     this._boundHandleNewMessage = this._handleNewMessage.bind(this);
   }
 
