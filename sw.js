@@ -1,4 +1,4 @@
-const CACHE_NAME = "lifeline-mesh-v13";
+const CACHE_NAME = "lifeline-mesh-v14";
 
 const ASSET_PATHS = [
   "/",
@@ -24,6 +24,7 @@ const ASSET_PATHS = [
   "/src/ui/meshStatus.js",
   "/src/ui/chatView.js",
   "/src/ui/pairingView.js",
+  "/src/ui/effects.js",
   "/icons/icon-192.svg",
   "/icons/icon-512.svg",
 ];
