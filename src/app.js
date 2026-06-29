@@ -143,6 +143,7 @@ class LifeLineMeshApp {
       console.log("[LifeLine] Peer removed:", peerId);
       this._peerKeyMap.delete(peerId);
       this._peerSigningKeyMap.delete(peerId);
+      this._keyExchangeSent.delete(peerId);
       this._updateBanner();
     });
 
@@ -189,6 +190,8 @@ class LifeLineMeshApp {
       established: false,
     });
 
+    await this._waitForDataChannelOpen(dataChannel);
+
     dataChannel.onmessage = (event) => {
       try {
         const parsed = JSON.parse(event.data);
@@ -204,6 +207,18 @@ class LifeLineMeshApp {
 
     if (!this._pendingConnections.has(tempId)) return;
     this._pendingConnections.get(tempId).keyExchangeSent = true;
+  }
+
+  _waitForDataChannelOpen(dataChannel) {
+    if (dataChannel.readyState === "open") return Promise.resolve();
+    return new Promise((resolve) => {
+      const handler = () => {
+        dataChannel.removeEventListener("open", handler);
+        resolve();
+      };
+      dataChannel.addEventListener("open", handler);
+      setTimeout(() => resolve(), 5000);
+    });
   }
 
   async _sendKeyExchange(tempId, dataChannel) {
