@@ -76,9 +76,9 @@ export class MeshStatusUI {
         : state === CONNECTION_STATE.FAILED ? "Failed"
         : "Disconnected";
       return `<li class="peer-item">
-        <span class="peer-id">${this._formatPeerId(peerId)}</span>
+        <span class="peer-id">${this._escapeHtml(this._formatPeerId(peerId))}</span>
         <span class="flex items-center gap-8">
-          <span style="font-size:12px;color:var(--text-muted)">${label}</span>
+          <span style="font-size:12px;color:var(--text-muted)">${this._escapeHtml(label)}</span>
           <span class="peer-status ${statusClass}"></span>
         </span>
       </li>`;
@@ -88,6 +88,12 @@ export class MeshStatusUI {
   _formatPeerId(peerId) {
     if (!peerId) return "???";
     return peerId.length > 12 ? peerId.slice(0, 12) + "…" : peerId;
+  }
+
+  _escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
   }
 
   _startUptimeCounter() {

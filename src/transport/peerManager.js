@@ -40,6 +40,7 @@ export class PeerManager extends EventTarget {
       dataChannel,
       state: CONNECTION_STATE.CONNECTING,
       connectedAt: null,
+      disconnectedAt: null,
       lastHeartbeatAt: Date.now(),
       missedHeartbeats: 0,
       bytesSent: 0,
@@ -361,6 +362,7 @@ export class PeerManager extends EventTarget {
 
     const oldState = record.state;
     record.state = newState;
+    record.disconnectedAt = Date.now();
     this._stopHeartbeat(peerId);
     this.dispatchEvent(new CustomEvent("peer-disconnected", {
       detail: { peerId, state: newState, previousState: oldState, timestamp: Date.now() },
@@ -395,8 +397,8 @@ export class PeerManager extends EventTarget {
       for (const [peerId, record] of this.peers) {
         if (record.state !== CONNECTION_STATE.CONNECTED &&
             record.state !== CONNECTION_STATE.CONNECTING) {
-          const disconnectedSince = record.connectedAt
-            ? now - record.connectedAt
+          const disconnectedSince = record.disconnectedAt
+            ? now - record.disconnectedAt
             : now - this._lastCleanupRun;
           if (disconnectedSince > DISCONNECT_GRACE_PERIOD_MS) {
             this.removePeer(peerId);
@@ -430,5 +432,5 @@ export class PeerManager extends EventTarget {
 }
 
 export function generateTempId() {
-  return `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return `temp-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 }

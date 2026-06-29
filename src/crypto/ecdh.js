@@ -1,18 +1,6 @@
 export async function deriveSharedKey(myPrivateDhKey, theirPublicDhKey) {
-  const sharedKey = await crypto.subtle.deriveKey(
-    {
-      name: "ECDH",
-      public: theirPublicDhKey,
-    },
-    myPrivateDhKey,
-    {
-      name: "AES-GCM",
-      length: 256,
-    },
-    false,
-    ["encrypt", "decrypt"]
-  );
-  return sharedKey;
+  const sharedBits = await deriveSharedKeyRaw(myPrivateDhKey, theirPublicDhKey);
+  return deriveKeyFromRaw(sharedBits);
 }
 
 export async function deriveSharedKeyRaw(myPrivateDhKey, theirPublicDhKey) {
@@ -28,9 +16,21 @@ export async function deriveSharedKeyRaw(myPrivateDhKey, theirPublicDhKey) {
 }
 
 export async function deriveKeyFromRaw(sharedBits) {
-  return crypto.subtle.importKey(
+  const hkdfKey = await crypto.subtle.importKey(
     "raw",
     sharedBits,
+    "HKDF",
+    false,
+    ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: new Uint8Array(16),
+      info: new TextEncoder().encode("lifeline-mesh-ecdh-v1"),
+    },
+    hkdfKey,
     { name: "AES-GCM", length: 256 },
     false,
     ["encrypt", "decrypt"]

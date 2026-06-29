@@ -2,7 +2,8 @@ import { PeerManager } from "./transport/peerManager.js";
 import { GossipRouter } from "./routing/gossipRouter.js";
 import { MessageLog } from "./crdt/messageLog.js";
 import { KeyManager } from "./crypto/keyManager.js";
-import { deriveSharedKey, importPublicDhKey } from "./crypto/ecdh.js";
+import { deriveSharedKeyRaw, deriveKeyFromRaw } from "./crypto/ecdh.js";
+import { incrementClock } from "./crdt/vectorClock.js";
 import { encryptPayload, decryptPayload, signMessage, verifySignature } from "./crypto/cipher.js";
 import { openDb, getAllMessages, WriteBuffer } from "./storage/db.js";
 import { createMessage, PRIORITY, isBroadcast, isSOS } from "./schema.js";
@@ -255,11 +256,21 @@ class LifeLineMeshApp {
     console.log("[LifeLine] Completing key exchange with peer:", peerDeviceId);
 
     try {
+      if (!msg.signingPublicKey || !msg.dhPublicKey) {
+        throw new Error("Missing public keys in key exchange");
+      }
+
+      const derivedId = await this.keyManager.deriveDeviceIdFromPublicKey(msg.signingPublicKey);
+      if (derivedId !== peerDeviceId) {
+        throw new Error(`Device ID mismatch: claimed "${peerDeviceId}" but derived "${derivedId}"`);
+      }
+
       await this.keyManager.importPeerDhKeyFromJwk(peerDeviceId, msg.dhPublicKey);
       await this.keyManager.importPeerSigningKeyFromJwk(peerDeviceId, msg.signingPublicKey);
 
       const peerDhKey = this.keyManager.getPeerDhPublicKey(peerDeviceId);
-      const sharedKey = await deriveSharedKey(this.keyManager.dhKeyPair.privateKey, peerDhKey);
+      const sharedBits = await deriveSharedKeyRaw(this.keyManager.dhKeyPair.privateKey, peerDhKey);
+      const sharedKey = await deriveKeyFromRaw(sharedBits);
       this._peerKeyMap.set(peerDeviceId, sharedKey);
       this._peerSigningKeyMap.set(peerDeviceId, this.keyManager.getPeerSigningPublicKey(peerDeviceId));
 
@@ -298,11 +309,21 @@ class LifeLineMeshApp {
     if (this._peerKeyMap.has(senderId)) return;
 
     try {
+      if (!msg.signingPublicKey || !msg.dhPublicKey) {
+        throw new Error("Missing public keys in key exchange");
+      }
+
+      const derivedId = await this.keyManager.deriveDeviceIdFromPublicKey(msg.signingPublicKey);
+      if (derivedId !== senderId) {
+        throw new Error(`Device ID mismatch: claimed "${senderId}" but derived "${derivedId}"`);
+      }
+
       await this.keyManager.importPeerDhKeyFromJwk(senderId, msg.dhPublicKey);
       await this.keyManager.importPeerSigningKeyFromJwk(senderId, msg.signingPublicKey);
 
       const peerDhKey = this.keyManager.getPeerDhPublicKey(senderId);
-      const sharedKey = await deriveSharedKey(this.keyManager.dhKeyPair.privateKey, peerDhKey);
+      const sharedBits = await deriveSharedKeyRaw(this.keyManager.dhKeyPair.privateKey, peerDhKey);
+      const sharedKey = await deriveKeyFromRaw(sharedBits);
       this._peerKeyMap.set(senderId, sharedKey);
       this._peerSigningKeyMap.set(senderId, this.keyManager.getPeerSigningPublicKey(senderId));
 
@@ -361,8 +382,6 @@ class LifeLineMeshApp {
   }
 
   async _handleGroupKeyAnnounce(peerId, msg) {
-    if (this._groupKey && this._initialized) return;
-
     try {
       const senderRealId = this._connectionToPeerId.get(peerId) || peerId;
       const sharedKey = this._peerKeyMap.get(senderRealId);
@@ -374,13 +393,22 @@ class LifeLineMeshApp {
       const decrypted = await decryptPayload(sharedKey, msg.ciphertext, msg.iv);
       if (decrypted && decrypted.key) {
         const keyBytes = new Uint8Array(decrypted.key);
-        await this.keyManager.importGroupKey(keyBytes);
-        this._groupKey = this.keyManager.groupKey;
 
-        if (this.db) {
-          await this.keyManager.saveToDb(this.db);
+        if (!this._groupKey) {
+          await this.keyManager.importGroupKey(keyBytes);
+          this._groupKey = this.keyManager.groupKey;
+          if (this.db) {
+            await this.keyManager.saveToDb(this.db);
+          }
+          console.log("[LifeLine] Group key received and imported");
+        } else if (senderRealId < this.keyManager.getFingerprint()) {
+          console.log("[LifeLine] Adopting group key from peer with lower device ID (island merge)");
+          await this.keyManager.importGroupKey(keyBytes);
+          this._groupKey = this.keyManager.groupKey;
+          if (this.db) {
+            await this.keyManager.saveToDb(this.db);
+          }
         }
-        console.log("[LifeLine] Group key received and imported");
       }
     } catch (error) {
       console.warn("[LifeLine] Failed to process group key announcement:", error.message);
@@ -419,13 +447,13 @@ class LifeLineMeshApp {
 
   async _handleAutoDecrypt(message) {
     try {
-      if (message.plaintext && (!message.ciphertext || message.ciphertext === "")) {
-        message.decryptedText = message.plaintext;
+      if (!message.ciphertext || message.ciphertext === "") {
+        message.decryptedText = "[🔒 No encrypted content]";
         return;
       }
 
       const sigValid = await this._verifyMessageSignature(message);
-      if (sigValid === false) {
+      if (sigValid === false || sigValid === null) {
         message.decryptedText = "[⚠️ Tampered — signature invalid]";
         return;
       }
@@ -438,58 +466,53 @@ class LifeLineMeshApp {
         const decrypted = await decryptPayload(sharedKey, message.ciphertext, message.iv);
         message.decryptedText = typeof decrypted === "string" ? decrypted : JSON.stringify(decrypted);
       } else if (message.ciphertext && message.ciphertext !== "") {
-        message.decryptedText = sigValid === null
-          ? "[🔒 Encrypted — sender unknown]"
-          : "[🔒 Encrypted]";
+        message.decryptedText = "[🔒 Encrypted — sender unknown]";
       } else {
-        message.decryptedText = message.plaintext || "[No content]";
+        message.decryptedText = "[No content]";
       }
     } catch {
       message.decryptedText = message.ciphertext && message.ciphertext !== ""
         ? "[⚠️ Could not decrypt]"
-        : (message.plaintext || "[No content]");
+        : "[No content]";
     }
   }
 
   async _persistMessage(message) {
     if (this.writeBuffer) {
-      this.writeBuffer.add(message);
+      const stored = { ...message };
+      delete stored.decryptedText;
+      delete stored.plaintext;
+      this.writeBuffer.add(stored);
     }
   }
 
   async sendMessage(text, priority = PRIORITY.NORMAL) {
     try {
       const deviceId = this.keyManager.getFingerprint();
+
+      if (!this._groupKey) {
+        throw new Error("Cannot send: group key not initialized");
+      }
+
+      const clock = incrementClock(this.messageLog.localClock, deviceId);
+      this.messageLog.localClock = clock;
+
       const msg = createMessage({
         senderId: deviceId,
         recipientId: null,
         priority,
-        vectorClock: this.messageLog.localClock,
+        vectorClock: clock,
         payload: text,
       });
 
-      if (isBroadcast(msg) && this._groupKey) {
-        const encrypted = await encryptPayload(this._groupKey, text);
-        msg.ciphertext = encrypted.ciphertext;
-        msg.iv = encrypted.iv;
-        msg.plaintext = "";
-        msg.signature = await signMessage(
-          this.keyManager.signingKeyPair.privateKey,
-          msg.id + msg.senderId + msg.ciphertext
-        );
-      } else if (!isBroadcast(msg)) {
-        for (const [peerId, sharedKey] of this._peerKeyMap) {
-          const encrypted = await encryptPayload(sharedKey, text);
-          msg.ciphertext = encrypted.ciphertext;
-          msg.iv = encrypted.iv;
-          msg.plaintext = "";
-          msg.signature = await signMessage(
-            this.keyManager.signingKeyPair.privateKey,
-            msg.id + msg.senderId + msg.ciphertext
-          );
-          break;
-        }
-      }
+      const encrypted = await encryptPayload(this._groupKey, text);
+      msg.ciphertext = encrypted.ciphertext;
+      msg.iv = encrypted.iv;
+      msg.plaintext = "";
+      msg.signature = await signMessage(
+        this.keyManager.signingKeyPair.privateKey,
+        msg.id + msg.senderId + msg.ciphertext
+      );
 
       msg.decryptedText = text;
 

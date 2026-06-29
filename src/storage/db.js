@@ -52,6 +52,7 @@ export function putMessagesBatch(db, messages) {
     }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(new Error("Transaction aborted"));
   });
 }
 
@@ -124,7 +125,19 @@ export class WriteBuffer {
     this.maxBatchSize = maxBatchSize;
     this._buffer = [];
     this._timer = null;
-    this._flushPromise = null;
+    this._flushQueue = Promise.resolve();
+  }
+
+  async _enqueue(batch) {
+    this._flushQueue = this._flushQueue.then(async () => {
+      try {
+        await putMessagesBatch(this.db, batch);
+      } catch (err) {
+        console.error("[WriteBuffer] Batch write failed:", err);
+        this._buffer.unshift(...batch);
+      }
+    });
+    return this._flushQueue;
   }
 
   add(message) {
@@ -143,16 +156,7 @@ export class WriteBuffer {
     }
     if (this._buffer.length === 0) return;
     const batch = this._buffer.splice(0);
-    if (this._flushPromise) {
-      await this._flushPromise;
-    }
-    this._flushPromise = putMessagesBatch(this.db, batch)
-      .catch((err) => {
-        console.error("[WriteBuffer] Batch write failed:", err);
-        this._buffer.unshift(...batch);
-      });
-    await this._flushPromise;
-    this._flushPromise = null;
+    await this._enqueue(batch);
   }
 
   destroy() {

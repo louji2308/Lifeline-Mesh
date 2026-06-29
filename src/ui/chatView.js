@@ -110,9 +110,9 @@ export class ChatView {
       el.innerHTML = `
         <div>${this._escapeHtml(String(content))}</div>
         <div class="message-meta">
-          <span>${isSelf ? "You" : this._formatPeerId(msg.senderId)}</span>
+          <span>${isSelf ? "You" : this._escapeHtml(this._formatPeerId(msg.senderId))}</span>
           ${isSOS ? '<span class="message-priority-sos">🆘 SOS</span>' : ""}
-          <span>${this._formatTime(msg.timestamp)}</span>
+          <span>${this._escapeHtml(this._formatTime(msg.timestamp))}</span>
         </div>
       `;
 

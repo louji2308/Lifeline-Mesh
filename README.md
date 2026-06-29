@@ -104,7 +104,8 @@ For three devices, pair A↔B and B↔C. Messages from A reach C via relay throu
 
 ## Known Limitations
 
-- Broadcast SOS uses a shared mesh group key (not per-recipient E2E) — any mesh member can decrypt. This is documented in the code and is an accepted tradeoff for the "anyone nearby can read an SOS" use case.
+- All messages use a shared mesh group key (AES-GCM 256-bit) — there is no per-recipient E2E encryption. Any mesh member can decrypt all traffic. This is a design tradeoff for the fully-connected mesh model and is accepted for emergency use.
+- Message history is stored as ciphertext-only in IndexedDB; plaintext is never written to disk.
 - Full Sybil-resistance and group-key rotation are future work.
 - QR scanning relies on the native `BarcodeDetector` API (Chromium-based browsers). Firefox and Safari fall back to camera preview without detection — QR remains scannable by the other device's camera.
 

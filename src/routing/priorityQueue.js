@@ -11,9 +11,9 @@ export class PriorityQueue {
   }
 
   enqueue(message) {
-    const priority = message.priority || "normal";
-    if (!this.buckets.hasOwnProperty(priority)) {
-      this.buckets[priority] = [];
+    let priority = message.priority || "normal";
+    if (!PRIORITY_ORDER.includes(priority)) {
+      priority = "normal";
     }
     this.buckets[priority].push(message);
     this._totalSize++;

@@ -39,9 +39,20 @@ function resolveAssetPath(relativePath) {
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    caches.open(CACHE_NAME).then(async (cache) => {
       const urls = ASSET_PATHS.map(resolveAssetPath);
-      return cache.addAll(urls);
+      const results = await Promise.allSettled(
+        urls.map((url) =>
+          fetch(url).then((res) => {
+            if (res.ok) return cache.put(url, res);
+            throw new Error(`Failed to fetch ${url}: ${res.status}`);
+          })
+        )
+      );
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length > 0) {
+        console.warn(`[SW] ${failed.length} assets failed to cache:`, failed.map((r) => r.reason.message));
+      }
     })
   );
   self.skipWaiting();

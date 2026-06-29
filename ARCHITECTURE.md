@@ -31,8 +31,8 @@ Every browser becomes a node. Zero infrastructure. Zero cost.
 - **Compaction:** Old messages pruned from active relay set, retained in durable storage
 
 ### 5. Security Layer — ECDH + AES-GCM + ECDSA
-- **Key Exchange:** ECDH (P-256) per-link and per-recipient
-- **Encryption:** AES-GCM 256-bit — per-recipient key for E2E, group key for broadcast SOS
+- **Key Exchange:** ECDH (P-256) per-link, with device-ID verification derived from signing public key
+- **Encryption:** AES-GCM 256-bit — group key for all mesh messages (broadcast-only model, no per-recipient E2E)
 - **Signing:** ECDSA over ciphertext — tamper detection without trusted third party
 - **IV:** Freshly generated per-message — never reused with same key
 
@@ -53,8 +53,8 @@ Every browser becomes a node. Zero infrastructure. Zero cost.
 | Group key for SOS | Yes | Necessary tradeoff for broadcast — documented limitation |
 
 ## Security Properties
-- **Confidentiality:** Relay nodes mathematically cannot decrypt payloads (per-recipient ECDH)
-- **Integrity:** ECDSA signatures detect any tampering in transit
+- **Confidentiality:** All messages encrypted with a shared mesh group key (AES-GCM 256-bit). Any mesh member can decrypt all traffic — this is an accepted tradeoff for the broadcast mesh model.
+- **Integrity:** ECDSA signatures detect any tampering in transit. Device identity is cryptographically verified during key exchange (ID derived from signing public key).
 - **Forward secrecy:** Not implemented (key rotation is future work — documented limitation)
 - **Sybil resistance:** Not implemented (future work — documented limitation)
 

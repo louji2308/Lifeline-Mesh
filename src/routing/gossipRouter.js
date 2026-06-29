@@ -1,17 +1,19 @@
 import { BloomFilter } from "./bloomFilter.js";
 import { PriorityQueue } from "./priorityQueue.js";
-import { MAX_TTL, hasExpired, validateMessageShape, isBroadcast } from "../schema.js";
+import { MAX_TTL, PRIORITY_ORDER, hasExpired, validateMessageShape, isBroadcast } from "../schema.js";
 import { MESSAGE_TYPE } from "../transport/dataChannel.js";
 
 const MAX_RELAYS_PER_SECOND_PER_PEER = 20;
 const RELAY_WINDOW_MS = 1000;
 const IDLE_DRAIN_INTERVAL_MS = 200;
+const SEEN_RESET_THRESHOLD = 500;
 
 export class GossipRouter {
   constructor(peerManager, onLocalDeliver) {
     this.peerManager = peerManager;
     this.onLocalDeliver = onLocalDeliver;
-    this.seen = new BloomFilter();
+    const filterSize = BloomFilter.optimalSize(SEEN_RESET_THRESHOLD, 0.01);
+    this.seen = new BloomFilter(filterSize, BloomFilter.optimalHashes(SEEN_RESET_THRESHOLD, filterSize));
     this.outboxQueues = new Map();
     this.relayTimestamps = new Map();
     this._idleDrainTimer = null;
@@ -46,8 +48,17 @@ export class GossipRouter {
         return;
       }
 
+      if (!validateMessageShape(message)) {
+        console.warn("[GossipRouter] Invalid message shape from peer, dropping");
+        return;
+      }
+
       if (this.seen.mightContain(message.id)) return;
       this.seen.add(message.id);
+
+      if (this.seen.count >= SEEN_RESET_THRESHOLD) {
+        this.seen.clear();
+      }
 
       if (hasExpired(message)) return;
 

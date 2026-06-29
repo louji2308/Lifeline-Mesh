@@ -127,6 +127,15 @@ export class KeyManager {
     }
   }
 
+  async deriveDeviceIdFromPublicKey(signingPubJwk) {
+    const keyData = signingPubJwk.x + signingPubJwk.y;
+    const encoder = new TextEncoder();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", encoder.encode(keyData));
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+    return "LM" + hashHex.slice(0, 16);
+  }
+
   hasGroupKey() {
     return this.groupKey !== null;
   }
