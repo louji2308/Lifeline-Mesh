@@ -2,41 +2,52 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Serverless offline-first emergency mesh communication network.">
-  <meta name="theme-color" content="#0b0f14">
+  <meta name="theme-color" content="#05080a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="LifeLine">
-  <title>LifeLine Mesh</title>
+  <title>LifeLine Mesh — Command Center</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="icons/icon-192.svg">
   <link rel="apple-touch-icon" href="icons/icon-192.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
-    *, *::before, *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     :root {
-      --bg-primary: #0b0f14;
-      --bg-secondary: #141922;
-      --bg-card: #1a2030;
-      --text-primary: #e8eaed;
-      --text-secondary: #9aa0a6;
-      --text-muted: #5f6368;
-      --accent-red: #e53935;
-      --accent-red-hover: #c62828;
-      --accent-green: #34a853;
-      --accent-yellow: #fbbc04;
-      --accent-blue: #4285f4;
-      --border-color: #2d3340;
-      --radius-sm: 6px;
-      --radius-md: 12px;
+      --bg-primary: #05080a;
+      --bg-secondary: #080d0f;
+      --bg-card: #0a1113;
+      --bg-elevated: #0d1518;
+      --text-primary: #d8f5e3;
+      --text-secondary: #7fae93;
+      --text-muted: #4c6a5a;
+      --accent-green: #45f07a;
+      --accent-green-soft: #2bd968;
+      --accent-green-dim: #1c7a42;
+      --accent-purple: #b070ff;
+      --accent-cyan: #38e0d0;
+      --accent-red: #ff4d5e;
+      --accent-red-hover: #e23344;
+      --accent-yellow: #ffd24a;
+      --accent-blue: #45f07a;
+      --glow-green: 0 0 18px rgba(69,240,122,0.35);
+      --glow-green-strong: 0 0 32px rgba(69,240,122,0.55);
+      --glow-purple: 0 0 24px rgba(176,112,255,0.45);
+      --border-color: rgba(69,240,122,0.16);
+      --border-soft: rgba(120,180,150,0.10);
+      --radius-sm: 8px;
+      --radius-md: 14px;
       --radius-lg: 20px;
-      --shadow: 0 2px 8px rgba(0,0,0,0.3);
-      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+      --shadow: 0 8px 30px rgba(0,0,0,0.55);
+      --font: "Chakra Petch", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
     }
+
     html, body {
       height: 100%;
       font-family: var(--font);
@@ -47,625 +58,739 @@
       -webkit-font-smoothing: antialiased;
       overflow: hidden;
     }
+
+    #bg-canvas {
+      position: fixed; inset: 0; width: 100%; height: 100%;
+      z-index: 0; pointer-events: none;
+    }
+    body::before {
+      content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(69,240,122,0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(69,240,122,0.035) 1px, transparent 1px);
+      background-size: 46px 46px;
+      mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, #000 40%, transparent 100%);
+    }
+    body::after {
+      content: ""; position: fixed; inset: 0; z-index: 1; pointer-events: none;
+      background:
+        repeating-linear-gradient(0deg, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px, rgba(0,0,0,0.18) 3px, rgba(0,0,0,0) 4px),
+        radial-gradient(ellipse 80% 70% at 50% 30%, transparent 55%, rgba(0,0,0,0.6) 100%);
+      animation: scan 8s linear infinite;
+      opacity: 0.5;
+    }
+    @keyframes scan { from { background-position: 0 0, 0 0; } to { background-position: 0 12px, 0 0; } }
+
     #app {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      max-width: 480px;
-      margin: 0 auto;
-      position: relative;
+      position: relative; z-index: 2;
+      display: flex; height: 100vh; width: 100%;
     }
-    #app-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 16px;
-      background: var(--bg-secondary);
-      border-bottom: 1px solid var(--border-color);
-      min-height: 56px;
-      flex-shrink: 0;
-    }
-    #app-header h1 {
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--text-primary);
-      letter-spacing: -0.3px;
-    }
-    #app-header .header-tagline {
-      font-size: 11px;
-      color: var(--text-muted);
-      font-weight: 400;
-    }
-    .header-controls {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-    #connectivity-banner {
-      text-align: center;
-      padding: 6px 12px;
-      font-size: 13px;
-      font-weight: 500;
-      flex-shrink: 0;
-      background: var(--accent-green);
-      color: #fff;
-      transition: background 0.3s, opacity 0.3s;
-    }
-    #connectivity-banner.online {
-      background: var(--accent-blue);
-    }
-    #connectivity-banner.offline {
-      background: var(--accent-green);
-    }
-    #connectivity-banner.hidden {
-      display: none;
-    }
-    #main-content {
-      flex: 1;
+
+    #sidebar {
+      width: 248px; flex-shrink: 0;
+      display: flex; flex-direction: column; gap: 18px;
+      padding: 22px 18px;
+      border-right: 1px solid var(--border-color);
+      background: linear-gradient(180deg, rgba(10,17,19,0.9), rgba(5,8,10,0.92));
+      backdrop-filter: blur(14px);
       overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      padding: 12px;
     }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      padding: 10px 18px;
-      border: none;
-      border-radius: var(--radius-sm);
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.15s, transform 0.1s, opacity 0.15s;
-      font-family: var(--font);
-      min-height: 44px;
-      -webkit-tap-highlight-color: transparent;
+    .brand { display: flex; align-items: center; gap: 12px; padding: 4px 6px 14px; border-bottom: 1px solid var(--border-soft); }
+    .brand-logo {
+      width: 40px; height: 40px; flex-shrink: 0; display: grid; place-items: center;
+      color: var(--accent-green); filter: drop-shadow(var(--glow-green));
+      animation: breathe 3.6s ease-in-out infinite;
     }
-    .btn:active { transform: scale(0.97); }
-    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-    .btn-primary {
-      background: var(--accent-blue);
-      color: #fff;
-    }
-    .btn-primary:hover:not(:disabled) { background: #3367d6; }
-    .btn-danger {
-      background: var(--accent-red);
-      color: #fff;
-    }
-    .btn-danger:hover:not(:disabled) { background: var(--accent-red-hover); }
-    .btn-secondary {
-      background: var(--bg-card);
-      color: var(--text-primary);
-      border: 1px solid var(--border-color);
-    }
-    .btn-secondary:hover:not(:disabled) { background: #252d3d; }
-    .btn-sos {
-      background: var(--accent-red);
-      color: #fff;
-      font-size: 18px;
-      padding: 16px 24px;
-      border-radius: var(--radius-md);
-      width: 100%;
-      font-weight: 800;
-      letter-spacing: 0.5px;
-      box-shadow: 0 0 20px rgba(229,57,53,0.3);
-    }
-    .btn-sos:active { box-shadow: 0 0 40px rgba(229,57,53,0.5); }
-    .btn-icon {
-      width: 44px;
-      height: 44px;
-      padding: 0;
-      border-radius: 50%;
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      color: var(--text-primary);
-      font-size: 20px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    #nav-bar {
-      display: flex;
-      gap: 0;
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border-color);
-      flex-shrink: 0;
-    }
+    .brand-name { font-size: 17px; font-weight: 700; letter-spacing: 0.2px; }
+    .brand-sub { font-size: 10.5px; color: var(--text-muted); line-height: 1.3; }
+
+    .nav { display: flex; flex-direction: column; gap: 8px; }
     .nav-btn {
-      flex: 1;
-      padding: 10px 8px;
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-      transition: color 0.15s;
-      font-family: var(--font);
+      position: relative; display: flex; align-items: center; gap: 14px;
+      padding: 13px 14px; border: 1px solid transparent; border-radius: var(--radius-md);
+      background: transparent; color: var(--text-secondary);
+      font-family: var(--font); font-size: 13.5px; font-weight: 600; letter-spacing: 1.5px;
+      cursor: pointer; text-transform: uppercase;
+      transition: transform .25s cubic-bezier(.2,.8,.2,1), color .2s, background .25s, border-color .25s, box-shadow .25s;
       -webkit-tap-highlight-color: transparent;
     }
-    .nav-btn .nav-icon { font-size: 20px; }
-    .nav-btn.active { color: var(--accent-red); }
-    .nav-btn:hover { color: var(--text-primary); }
-    .view {
-      display: none;
-      height: 100%;
-      flex-direction: column;
+    .nav-btn svg { width: 20px; height: 20px; transition: transform .3s; }
+    .nav-btn:hover { color: var(--text-primary); transform: translateX(4px); background: rgba(69,240,122,0.05); }
+    .nav-btn:hover svg { transform: rotate(6deg); }
+    .nav-btn.active {
+      color: var(--accent-green);
+      background: linear-gradient(90deg, rgba(69,240,122,0.14), rgba(69,240,122,0.02));
+      border-color: rgba(69,240,122,0.4);
+      box-shadow: var(--glow-green), inset 0 0 18px rgba(69,240,122,0.08);
     }
-    .view.active { display: flex; }
-    .card {
-      background: var(--bg-card);
-      border-radius: var(--radius-md);
-      padding: 16px;
-      margin-bottom: 12px;
-      border: 1px solid var(--border-color);
+    .nav-btn.active::before {
+      content: ""; position: absolute; left: 0; top: 14%; bottom: 14%; width: 3px;
+      border-radius: 3px; background: var(--accent-green); box-shadow: var(--glow-green-strong);
     }
-    .card-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+
+    .side-spacer { flex: 1; }
+
+    .mini-card {
+      border: 1px solid var(--border-color); border-radius: var(--radius-md);
+      padding: 14px; background: rgba(13,21,24,0.6);
     }
-    .peer-list { list-style: none; }
-    .peer-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 0;
-      border-bottom: 1px solid var(--border-color);
-    }
-    .peer-item:last-child { border-bottom: none; }
-    .peer-id {
-      font-family: "SF Mono", "Fira Code", monospace;
-      font-size: 13px;
-      color: var(--text-primary);
-    }
-    .peer-status {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .peer-status.connected { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
-    .peer-status.disconnected { background: var(--text-muted); }
-    .peer-status.failed { background: var(--accent-red); }
-    .peer-status.connecting { background: var(--accent-yellow); animation: pulse 1s infinite; }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-    .message-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 8px 0;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .message {
-      padding: 10px 14px;
-      border-radius: var(--radius-sm);
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      max-width: 85%;
-      word-wrap: break-word;
-      font-size: 14px;
-      line-height: 1.4;
-      position: relative;
-    }
-    .message--self { align-self: flex-end; background: #1a3a5c; border-color: #1a4a6c; }
-    .message--other { align-self: flex-start; }
-    .message--sos {
-      background: rgba(229,57,53,0.15);
-      border-color: var(--accent-red);
-      align-self: flex-start;
-      font-weight: 600;
-    }
-    .message--sos.message--self { background: rgba(229,57,53,0.25); }
-    .message-meta {
-      font-size: 11px;
-      color: var(--text-muted);
-      margin-top: 4px;
-      display: flex;
-      gap: 8px;
-    }
-    .message-priority-sos {
-      color: var(--accent-red);
-      font-weight: 700;
-    }
-    .compose-area {
-      display: flex;
-      gap: 8px;
-      padding: 12px 0;
-      align-items: flex-end;
-    }
-    .compose-input {
-      flex: 1;
-      padding: 12px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border-color);
-      background: var(--bg-secondary);
-      color: var(--text-primary);
-      font-size: 14px;
-      font-family: var(--font);
-      resize: none;
-      min-height: 44px;
-    }
-    .compose-input:focus { outline: none; border-color: var(--accent-blue); }
-    .compose-input::placeholder { color: var(--text-muted); }
-    .priority-selector {
-      display: flex;
-      gap: 4px;
-    }
-    .priority-btn {
-      padding: 6px 10px;
-      border-radius: 4px;
-      border: 1px solid var(--border-color);
-      background: var(--bg-secondary);
-      color: var(--text-secondary);
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-      font-family: var(--font);
-    }
-    .priority-btn.active { border-color: var(--accent-red); color: var(--accent-red); background: rgba(229,57,53,0.1); }
-    .priority-btn.priority-sos.active { border-color: var(--accent-red); color: var(--accent-red); }
-    .priority-btn.priority-normal.active { border-color: var(--accent-blue); color: var(--accent-blue); }
-    .priority-btn.priority-chat.active { border-color: var(--text-muted); color: var(--text-muted); }
-    .pairing-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
-      padding: 16px 0;
-    }
-    .qr-display {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-    }
-    .qr-canvas {
-      border-radius: var(--radius-md);
-      max-width: 340px;
-      width: 100%;
-      aspect-ratio: 1;
-      background: #fff;
-    }
-    .qr-label {
-      font-size: 13px;
-      color: var(--text-secondary);
-      text-align: center;
-    }
-    .qr-frame-label {
-      font-size: 12px;
-      color: var(--text-muted);
-      font-family: monospace;
-    }
-    .qr-advance-btn {
-      padding: 8px 16px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border-color);
-      background: var(--bg-card);
-      color: var(--text-primary);
-      cursor: pointer;
-      font-family: var(--font);
-    }
-    .pairing-state {
-      text-align: center;
-      padding: 12px;
-    }
-    .pairing-state .state-icon { font-size: 48px; margin-bottom: 8px; }
-    .pairing-state .state-label { font-size: 16px; font-weight: 600; }
-    .pairing-state .state-desc { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
-    .video-scanner {
-      width: 100%;
-      max-width: 360px;
-      margin: 0 auto;
-      border-radius: var(--radius-md);
-      overflow: hidden;
-      background: #000;
-      position: relative;
-    }
-    .video-scanner video {
-      width: 100%;
-      display: block;
-      min-height: 240px;
-      object-fit: cover;
-    }
-    .stats-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-    .stat-item {
-      background: var(--bg-secondary);
-      padding: 12px;
-      border-radius: var(--radius-sm);
-      text-align: center;
-    }
-    .stat-value {
-      font-size: 24px;
-      font-weight: 700;
-      color: var(--text-primary);
-    }
-    .stat-label {
-      font-size: 11px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-top: 2px;
-    }
+    .mini-label { font-size: 10px; letter-spacing: 1.5px; color: var(--text-muted); text-transform: uppercase; }
+    .mini-status { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+    .mini-status strong { font-size: 16px; font-weight: 700; color: var(--accent-green); letter-spacing: 1px; }
+    .mini-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    #sparkline { width: 100%; height: 34px; margin-top: 8px; display: block; }
+    .enc-row { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+    .enc-row strong { font-size: 16px; font-weight: 700; letter-spacing: 1px; }
+    .enc-row svg { width: 18px; height: 18px; color: var(--accent-green); }
     .device-id {
-      font-family: monospace;
-      font-size: 12px;
-      color: var(--text-muted);
-      padding: 4px 8px;
-      background: var(--bg-secondary);
-      border-radius: 4px;
-      word-break: break-all;
+      font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+      word-break: break-all; line-height: 1.4;
     }
-    .modal-overlay {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.7);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-      padding: 24px;
-    }
-    .modal-overlay.hidden { display: none; }
-    .modal-content {
-      background: var(--bg-card);
-      border-radius: var(--radius-lg);
-      padding: 24px;
-      max-width: 360px;
-      width: 100%;
+    .side-foot { font-size: 10px; color: var(--text-muted); letter-spacing: 1px; padding: 0 4px; }
+
+    #main-content { flex: 1; overflow-y: auto; padding: 20px; scroll-behavior: smooth; }
+    #connectivity-banner { display: none !important; }
+
+    .view { display: none; }
+    .view.active { display: block; animation: fadeUp .5s cubic-bezier(.2,.8,.2,1); }
+    #view-chat.active, #view-pair.active { display: flex; flex-direction: column; min-height: calc(100vh - 40px); }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+    .panel {
+      position: relative; border-radius: var(--radius-lg);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0)) ,
+        rgba(10,17,19,0.55);
       border: 1px solid var(--border-color);
+      backdrop-filter: blur(16px) saturate(120%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), var(--shadow);
+      overflow: hidden;
     }
-    .modal-content h2 { font-size: 20px; margin-bottom: 12px; }
-    .modal-content p { color: var(--text-secondary); font-size: 14px; margin-bottom: 20px; line-height: 1.5; }
-    .modal-actions { display: flex; gap: 8px; }
-    .modal-actions .btn { flex: 1; }
+    .panel::before {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+      background: radial-gradient(120% 60% at 50% -10%, rgba(69,240,122,0.10), transparent 60%);
+    }
+    .panel.glow-edge::after {
+      content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
+      background: conic-gradient(from var(--edge-angle, 0deg), transparent 0deg, transparent 300deg, rgba(69,240,122,0.85) 340deg, rgba(176,112,255,0.7) 360deg);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+      animation: edgeflow 6s linear infinite;
+      opacity: .65;
+    }
+    @property --edge-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+    @keyframes edgeflow { to { --edge-angle: 360deg; } }
+
+    .section { padding: 18px; margin-bottom: 18px; }
+    .section-title {
+      font-size: 12px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase;
+      color: var(--accent-green); margin-bottom: 16px; text-shadow: 0 0 12px rgba(69,240,122,0.4);
+    }
+
+    .dashboard { display: grid; grid-template-columns: minmax(0,1fr) 340px; gap: 18px; align-items: start; }
+    .dash-main { grid-column: 1; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+    .dash-rail { grid-column: 2; display: flex; flex-direction: column; gap: 18px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+    .hero { grid-column: 1 / -1; padding: 30px 32px; min-height: 320px; }
+    .hero-bg { position: absolute; inset: 0; z-index: 0; }
+    #map-canvas { width: 100%; height: 100%; display: block; opacity: 0.9; }
+    .hero-content { position: relative; z-index: 2; max-width: 540px; }
+    .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 26px; }
+    .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 2.5px; color: var(--accent-green); text-transform: uppercase; }
+    .eyebrow .dot, .meta-active .dot, .status-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); box-shadow: var(--glow-green-strong); animation: pulse 1.8s ease-in-out infinite; }
+    .hero-top-right { display: flex; align-items: center; gap: 10px; }
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px;
+      border: 1px solid rgba(69,240,122,0.4); background: rgba(69,240,122,0.08);
+      font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: var(--accent-green);
+      box-shadow: var(--glow-green);
+    }
+    .status-pill.degraded { border-color: rgba(255,210,74,0.5); background: rgba(255,210,74,0.08); color: var(--accent-yellow); box-shadow: 0 0 18px rgba(255,210,74,0.3); }
+    .status-pill.degraded .dot { background: var(--accent-yellow); box-shadow: 0 0 14px rgba(255,210,74,0.6); }
+    .icon-btn {
+      width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px;
+      border: 1px solid var(--border-color); background: rgba(13,21,24,0.6); color: var(--accent-green);
+      cursor: pointer; transition: box-shadow .25s, transform .15s, border-color .25s;
+    }
+    .icon-btn svg { width: 18px; height: 18px; }
+    .icon-btn:hover { box-shadow: var(--glow-green); border-color: rgba(69,240,122,0.4); transform: translateY(-1px); }
+    .hero-title {
+      font-size: clamp(34px, 5vw, 58px); font-weight: 700; line-height: 1.0; letter-spacing: 1px;
+      text-transform: uppercase; text-shadow: 0 2px 30px rgba(0,0,0,0.6);
+    }
+    .hero-title .accent { color: var(--accent-green); text-shadow: 0 0 28px rgba(69,240,122,0.55); }
+    .hero-sub { margin-top: 18px; font-size: 15px; color: var(--text-secondary); max-width: 420px; line-height: 1.6; }
+    .hero-meta { display: flex; align-items: center; gap: 16px; margin-top: 22px; font-size: 13px; color: var(--text-secondary); }
+    .meta-active { display: inline-flex; align-items: center; gap: 8px; color: var(--accent-green); font-weight: 600; }
+    .hero-meta .divider { width: 1px; height: 16px; background: var(--border-color); }
+    .hero-meta b { color: var(--text-primary); }
+
+    .live-feed {
+      position: absolute; top: 24px; right: 28px; z-index: 2; width: 210px;
+      border: 1px solid var(--border-color); border-radius: var(--radius-md);
+      background: rgba(5,10,9,0.66); backdrop-filter: blur(8px); padding: 12px;
+    }
+    .live-feed-title { font-size: 10px; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 8px; }
+    .live-feed-body { font-family: var(--font-mono); font-size: 10.5px; line-height: 1.7; color: var(--accent-green-soft); min-height: 92px; }
+    .live-feed-body .lf-line { white-space: nowrap; overflow: hidden; }
+    .live-feed-body .lf-line .lf-prompt { color: var(--text-muted); }
+    .hex-feed { margin-top: 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); line-height: 1.7; opacity: .8; }
+
+    .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .stat-card {
+      position: relative; padding: 18px; border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+      background: linear-gradient(160deg, rgba(69,240,122,0.06), rgba(10,17,19,0.4));
+      transition: transform .2s cubic-bezier(.2,.8,.2,1), box-shadow .25s, border-color .25s;
+      transform-style: preserve-3d; will-change: transform;
+    }
+    .stat-card:hover { box-shadow: var(--glow-green), var(--shadow); border-color: rgba(69,240,122,0.4); }
+    .stat-card.is-purple { background: linear-gradient(160deg, rgba(176,112,255,0.10), rgba(10,17,19,0.4)); border-color: rgba(176,112,255,0.28); }
+    .stat-card.is-purple:hover { box-shadow: var(--glow-purple), var(--shadow); border-color: rgba(176,112,255,0.5); }
+    .stat-head { display: flex; align-items: center; gap: 14px; }
+    .stat-icon { width: 40px; height: 40px; flex-shrink: 0; display: grid; place-items: center; border-radius: 10px; color: var(--accent-green); background: rgba(69,240,122,0.08); border: 1px solid rgba(69,240,122,0.2); animation: breathe 4s ease-in-out infinite; }
+    .stat-icon svg { width: 22px; height: 22px; }
+    .is-purple .stat-icon { color: var(--accent-purple); background: rgba(176,112,255,0.1); border-color: rgba(176,112,255,0.28); }
+    .stat-value { font-family: var(--font-mono); font-size: 34px; font-weight: 700; line-height: 1; letter-spacing: -1px; }
+    .is-purple .stat-value { color: #e3d3ff; }
+    .stat-name { font-size: 12px; font-weight: 600; letter-spacing: 1.5px; color: var(--text-primary); text-transform: uppercase; margin-top: 14px; }
+    .stat-desc { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+
+    .peer-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .peer-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-soft); background: rgba(13,21,24,0.5);
+      animation: fadeUp .4s ease;
+    }
+    .peer-id { font-family: var(--font-mono); font-size: 13px; color: var(--text-primary); }
+    .peer-status { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .peer-status.connected { background: var(--accent-green); box-shadow: var(--glow-green); }
+    .peer-status.disconnected { background: var(--text-muted); }
+    .peer-status.failed { background: var(--accent-red); box-shadow: 0 0 8px var(--accent-red); }
+    .peer-status.connecting { background: var(--accent-yellow); animation: pulse 1s infinite; }
+
+    .peer-empty { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 26px 12px; text-align: center; }
+    .peer-empty .wifi-pulse { color: var(--accent-green); filter: drop-shadow(var(--glow-green)); animation: breathe 2.6s ease-in-out infinite; }
+    .peer-empty .wifi-pulse svg { width: 56px; height: 56px; }
+    .peer-empty .pe-title { font-size: 13px; font-weight: 700; letter-spacing: 1.5px; color: var(--accent-green); text-transform: uppercase; }
+    .peer-empty .pe-desc { font-size: 12.5px; color: var(--text-muted); max-width: 230px; line-height: 1.5; }
+
+    .btn, .pill-btn {
+      position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 12px 20px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);
+      font-family: var(--font); font-size: 13px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+      cursor: pointer; overflow: hidden; min-height: 46px;
+      background: rgba(13,21,24,0.6); color: var(--text-primary);
+      transition: transform .15s cubic-bezier(.2,.8,.2,1), box-shadow .25s, border-color .25s, background .25s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn svg, .pill-btn svg { width: 18px; height: 18px; }
+    .btn::after, .action-row::after {
+      content: ""; position: absolute; top: 0; left: -120%; width: 60%; height: 100%;
+      background: linear-gradient(100deg, transparent, rgba(255,255,255,0.18), transparent);
+      transform: skewX(-18deg); transition: left .6s ease;
+    }
+    .btn:hover::after, .action-row:hover::after { left: 140%; }
+    .btn:hover { transform: translateY(-2px); }
+    .btn:active { transform: translateY(0) scale(.98); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+    .btn-primary {
+      background: linear-gradient(180deg, rgba(69,240,122,0.18), rgba(69,240,122,0.06));
+      border-color: rgba(69,240,122,0.5); color: var(--accent-green);
+      box-shadow: var(--glow-green), inset 0 0 18px rgba(69,240,122,0.1);
+    }
+    .btn-primary:hover { box-shadow: var(--glow-green-strong), inset 0 0 22px rgba(69,240,122,0.18); }
+    .btn-secondary:hover { border-color: rgba(69,240,122,0.4); box-shadow: var(--glow-green); }
+    .btn-danger { background: linear-gradient(180deg, rgba(255,77,94,0.2), rgba(255,77,94,0.06)); border-color: rgba(255,77,94,0.5); color: #ffd9dd; box-shadow: 0 0 18px rgba(255,77,94,0.3); }
+    .btn-danger:hover { box-shadow: 0 0 28px rgba(255,77,94,0.5); }
+    .w-full { width: 100%; }
+
+    .action-row {
+      position: relative; display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+      padding: 14px 16px; margin-bottom: 12px; border-radius: var(--radius-md);
+      border: 1px solid var(--border-color); background: rgba(13,21,24,0.5); color: var(--text-primary);
+      font-family: var(--font); cursor: pointer; overflow: hidden;
+      transition: transform .18s cubic-bezier(.2,.8,.2,1), box-shadow .25s, border-color .25s, background .25s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .action-row:last-child { margin-bottom: 0; }
+    .action-row:hover { transform: translateX(5px); border-color: rgba(69,240,122,0.4); box-shadow: var(--glow-green); background: rgba(69,240,122,0.05); }
+    .action-ico { width: 42px; height: 42px; flex-shrink: 0; display: grid; place-items: center; border-radius: 10px; color: var(--accent-green); background: rgba(69,240,122,0.08); border: 1px solid rgba(69,240,122,0.22); }
+    .action-ico svg { width: 20px; height: 20px; }
+    .action-txt { flex: 1; min-width: 0; }
+    .action-title { font-size: 13.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+    .action-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+    .action-row .chevron { color: var(--text-muted); transition: transform .2s, color .2s; }
+    .action-row:hover .chevron { color: var(--accent-green); transform: translateX(3px); }
+
+    .radar-wrap { position: relative; width: 100%; aspect-ratio: 1; max-width: 290px; margin: 0 auto; }
+    #radar-canvas { width: 100%; height: 100%; display: block; }
+    .health-row { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; font-size: 12.5px; color: var(--text-secondary); }
+    .health-row b { font-family: var(--font-mono); color: var(--accent-green); font-size: 14px; }
+    .health-dots { display: flex; gap: 3px; margin-top: 10px; }
+    .health-dots span { flex: 1; height: 6px; border-radius: 2px; background: rgba(69,240,122,0.15); transition: background .3s, box-shadow .3s; }
+    .health-dots span.on { background: var(--accent-green); box-shadow: 0 0 6px rgba(69,240,122,0.6); }
+
+    .info-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
+    .info-row:last-child { border-bottom: none; }
+    .info-k { display: inline-flex; align-items: center; gap: 9px; color: var(--text-secondary); }
+    .info-k svg { width: 15px; height: 15px; color: var(--text-muted); }
+    .info-v { font-family: var(--font-mono); font-weight: 500; color: var(--text-primary); display: inline-flex; align-items: center; gap: 6px; }
+    .info-v.secure { color: var(--accent-green); }
+    .info-v.secure svg { width: 13px; height: 13px; }
+    .copy-ico { color: var(--text-muted); cursor: pointer; }
+    .copy-ico:hover { color: var(--accent-green); }
+
+    .centered-view { width: 100%; max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; flex: 1; }
+    .chat-panel { flex: 1; display: flex; flex-direction: column; padding: 18px; min-height: 0; }
+    .message-list { flex: 1; overflow-y: auto; padding: 10px 4px; display: flex; flex-direction: column; gap: 8px; }
+    .message {
+      padding: 11px 15px; border-radius: var(--radius-md); border: 1px solid var(--border-soft);
+      background: rgba(13,21,24,0.6); max-width: 78%; word-wrap: break-word; font-size: 14px; line-height: 1.45;
+      animation: fadeUp .35s ease;
+    }
+    .message--self { align-self: flex-end; background: linear-gradient(180deg, rgba(69,240,122,0.16), rgba(69,240,122,0.05)); border-color: rgba(69,240,122,0.35); }
+    .message--other { align-self: flex-start; }
+    .message--sos { background: rgba(255,77,94,0.14); border-color: rgba(255,77,94,0.5); font-weight: 600; align-self: flex-start; }
+    .message--sos.message--self { background: rgba(255,77,94,0.22); align-self: flex-end; }
+    .message-meta { font-size: 11px; color: var(--text-muted); margin-top: 5px; display: flex; gap: 10px; font-family: var(--font-mono); }
+    .message-priority-sos { color: var(--accent-red); font-weight: 700; }
+    .compose-area { display: flex; gap: 10px; padding: 14px 4px 4px; align-items: flex-end; border-top: 1px solid var(--border-soft); margin-top: 8px; }
+    .compose-input {
+      flex: 1; padding: 13px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);
+      background: rgba(5,10,9,0.6); color: var(--text-primary); font-size: 14px; font-family: var(--font);
+      resize: none; min-height: 46px; transition: border-color .2s, box-shadow .2s;
+    }
+    .compose-input:focus { outline: none; border-color: rgba(69,240,122,0.5); box-shadow: var(--glow-green); }
+    .compose-input::placeholder { color: var(--text-muted); }
+    .priority-selector { display: flex; gap: 6px; }
+    .priority-btn {
+      display: grid; place-items: center; width: 46px; height: 46px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color); background: rgba(13,21,24,0.6); color: var(--text-secondary);
+      font-size: 10px; font-weight: 700; letter-spacing: .5px; cursor: pointer; font-family: var(--font); transition: all .2s;
+    }
+    .priority-btn svg { width: 18px; height: 18px; }
+    .priority-btn.active { box-shadow: var(--glow-green); }
+    .priority-btn.priority-sos.active { border-color: var(--accent-red); color: var(--accent-red); background: rgba(255,77,94,0.12); box-shadow: 0 0 14px rgba(255,77,94,0.3); }
+    .priority-btn.priority-normal.active { border-color: var(--accent-green); color: var(--accent-green); background: rgba(69,240,122,0.1); }
+    .priority-btn.priority-chat.active { border-color: var(--accent-cyan); color: var(--accent-cyan); background: rgba(56,224,208,0.1); box-shadow: 0 0 14px rgba(56,224,208,0.3); }
+
+    .pairing-container { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; max-width: 560px; margin: 0 auto; padding: 8px 0; }
+    .pairing-state { text-align: center; padding: 14px; }
+    .pairing-state .state-icon { font-size: 46px; margin-bottom: 8px; filter: drop-shadow(var(--glow-green)); color: var(--accent-green); display: flex; align-items: center; justify-content: center; }
+    .pairing-state .state-icon svg { width: 48px; height: 48px; }
+    .pairing-state .state-label { font-size: 17px; font-weight: 700; letter-spacing: 1px; }
+    .pairing-state .state-desc { font-size: 13px; color: var(--text-secondary); margin-top: 6px; line-height: 1.5; }
+    .qr-display { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .qr-canvas { border-radius: var(--radius-md); max-width: 280px; width: 100%; aspect-ratio: 1; background: #fff; image-rendering: pixelated; box-shadow: var(--glow-green); }
+    .qr-label { font-size: 13px; color: var(--text-secondary); text-align: center; line-height: 1.5; }
+    .qr-version-info { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+    .video-scanner { width: 100%; max-width: 340px; border-radius: var(--radius-md); overflow: hidden; background: #000; border: 1px solid rgba(69,240,122,0.4); box-shadow: var(--glow-green); position: relative; }
+    .video-scanner video { width: 100%; display: block; }
+    .video-scanner::after { content: ""; position: absolute; left: 0; right: 0; height: 2px; top: 0; background: var(--accent-green); box-shadow: var(--glow-green-strong); animation: scanline 2.4s ease-in-out infinite; }
+    @keyframes scanline { 0%,100% { top: 4%; } 50% { top: 96%; } }
     .loading-spinner {
-      display: inline-block;
-      width: 24px; height: 24px;
-      border: 3px solid var(--border-color);
-      border-top-color: var(--accent-red);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
+      display: inline-block; width: 42px; height: 42px; margin: 4px auto;
+      border: 2px solid rgba(69,240,122,0.15); border-top-color: var(--accent-green);
+      border-right-color: var(--accent-green); border-radius: 50%;
+      animation: spin .9s cubic-bezier(.5,.1,.5,.9) infinite; box-shadow: var(--glow-green);
     }
+
+    .card {
+      position: relative; border-radius: var(--radius-lg); padding: 18px; margin-bottom: 14px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0)), rgba(10,17,19,0.55);
+      border: 1px solid var(--border-color); backdrop-filter: blur(16px);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), var(--shadow);
+    }
+    .card-title { font-size: 12px; font-weight: 700; color: var(--accent-green); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 2px; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(2,5,4,0.78); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 24px; animation: fadeUp .25s ease; }
+    .modal-overlay.hidden { display: none; }
+    .modal-content { border-radius: var(--radius-lg); padding: 26px; max-width: 380px; width: 100%; text-align: center; background: linear-gradient(180deg, rgba(255,77,94,0.06), rgba(10,17,19,0.9)); border: 1px solid rgba(255,77,94,0.4); box-shadow: 0 0 40px rgba(255,77,94,0.25); }
+    .modal-content .modal-ico { color: var(--accent-red); margin-bottom: 12px; filter: drop-shadow(0 0 14px rgba(255,77,94,0.5)); }
+    .modal-content .modal-ico svg { width: 48px; height: 48px; }
+    .modal-content h2 { font-size: 20px; margin-bottom: 12px; }
+    .modal-content p { color: var(--text-secondary); font-size: 14px; margin-bottom: 22px; line-height: 1.5; }
+    .modal-actions { display: flex; gap: 10px; }
+    .modal-actions .btn { flex: 1; }
+
+    @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.82); } }
+    @keyframes breathe { 0%,100% { transform: scale(1); filter: drop-shadow(0 0 6px rgba(69,240,122,0.3)); } 50% { transform: scale(1.06); filter: drop-shadow(0 0 16px rgba(69,240,122,0.6)); } }
     @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes scan-pulse {
-    0%, 100% { border-color: rgba(66,133,244,0.3); box-shadow: 0 0 8px rgba(66,133,244,0.1); }
-    50% { border-color: rgba(66,133,244,0.8); box-shadow: 0 0 16px rgba(66,133,244,0.3); }
-  }
-  .scanning-active { animation: scan-pulse 1.5s ease-in-out infinite !important; }
-  .scanning-detected { border-color: rgba(52,168,83,0.8) !important; box-shadow: 0 0 20px rgba(52,168,83,0.4) !important; animation: none !important; }
-    @media (max-width: 480px) {
-      #app { max-width: 100%; }
-    }
-    @media (prefers-color-scheme: light) {
-      :root {
-        --bg-primary: #f5f5f5;
-        --bg-secondary: #ffffff;
-        --bg-card: #ffffff;
-        --text-primary: #1a1a1a;
-        --text-secondary: #5f6368;
-        --text-muted: #9aa0a6;
-        --border-color: #e0e0e0;
-      }
-      .message--self { background: #e3f2fd; border-color: #bbdefb; }
-    }
+    @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+
     .hidden { display: none !important; }
     .text-center { text-align: center; }
-    .mt-8 { margin-top: 8px; }
-    .mb-8 { margin-bottom: 8px; }
-    .gap-8 { gap: 8px; }
-    .flex { display: flex; }
-    .flex-col { flex-direction: column; }
-    .items-center { align-items: center; }
-    .justify-between { justify-content: space-between; }
-    .w-full { width: 100%; }
+    .mt-8 { margin-top: 8px; } .mb-8 { margin-bottom: 8px; } .gap-8 { gap: 8px; }
+    .flex { display: flex; } .flex-col { flex-direction: column; }
+    .items-center { align-items: center; } .justify-between { justify-content: space-between; }
+
+    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(69,240,122,0.2); border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(69,240,122,0.4); }
+
+    @media (max-width: 1180px) {
+      .dashboard { grid-template-columns: 1fr; }
+      .dash-rail { grid-column: 1; flex-direction: row; flex-wrap: wrap; }
+      .dash-rail > .panel { flex: 1; min-width: 280px; }
+      .live-feed { display: none; }
+      .hero-content { max-width: 100%; }
+    }
+    @media (max-width: 860px) {
+      #app { flex-direction: column; }
+      #sidebar { width: 100%; flex-direction: row; align-items: center; gap: 12px; padding: 12px; overflow-x: auto; flex-shrink: 0; }
+      .brand { border-bottom: none; padding: 0 8px 0 0; border-right: 1px solid var(--border-soft); }
+      .brand-sub { display: none; }
+      .nav { flex-direction: row; }
+      .nav-btn { padding: 10px 14px; }
+      .nav-btn span.nav-text { display: none; }
+      .side-spacer, .mini-card, .side-foot, .device-id { display: none; }
+      .stat-grid { grid-template-columns: 1fr 1fr; }
+      .two-col { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 520px) {
+      #main-content { padding: 12px; }
+      .hero { padding: 22px 18px; }
+      .stat-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
+    }
   </style>
 </head>
 <body>
-  <div id="app">
-    <header id="app-header">
-      <div>
-        <h1>🛰️ LifeLine Mesh</h1>
-        <div class="header-tagline">Zero-infrastructure emergency mesh</div>
-      </div>
-      <div class="header-controls">
-        <span id="device-id-display" class="device-id hidden"></span>
-      </div>
-    </header>
+  <canvas id="bg-canvas" aria-hidden="true"></canvas>
 
-    <div id="connectivity-banner" class="hidden">
-      <span id="banner-text"></span>
-    </div>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="34" height="34">
+            <path d="M12 2 L16 6 L12 10 L8 6 Z" fill="currentColor" fill-opacity="0.85" stroke="none"/>
+            <path d="M6 8 L10 12 L6 16 L2 12 Z" fill="currentColor" fill-opacity="0.55" stroke="none"/>
+            <path d="M18 8 L22 12 L18 16 L14 12 Z" fill="currentColor" fill-opacity="0.55" stroke="none"/>
+            <path d="M12 14 L16 18 L12 22 L8 18 Z" fill="currentColor" fill-opacity="0.85" stroke="none"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-name">LifeLine Mesh</div>
+          <div class="brand-sub">Zero-infrastructure<br>emergency mesh</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-btn active" data-view="mesh">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="2.4"/><circle cx="19" cy="6" r="2.4"/><circle cx="19" cy="18" r="2.4"/><line x1="7.1" y1="11" x2="16.9" y2="6.9"/><line x1="7.1" y1="13" x2="16.9" y2="17.1"/></svg>
+          <span class="nav-text">Mesh</span>
+        </button>
+        <button class="nav-btn" data-view="chat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.3 8.5 8.5 0 0 1-3.5-.7L3 21l1.9-5.5A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg>
+          <span class="nav-text">Chat</span>
+        </button>
+        <button class="nav-btn" data-view="pair">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          <span class="nav-text">Pair</span>
+        </button>
+      </nav>
+
+      <div class="side-spacer"></div>
+
+      <div class="mini-card">
+        <div class="mini-label">System Status</div>
+        <div class="mini-status">
+          <strong id="side-system-state">ONLINE</strong>
+          <span class="peer-status connected" style="width:11px;height:11px;"></span>
+        </div>
+        <div class="mini-desc">All systems operational</div>
+        <canvas id="sparkline" aria-hidden="true"></canvas>
+      </div>
+
+      <div class="mini-card">
+        <div class="mini-label">Encryption</div>
+        <div class="enc-row">
+          <strong style="color:var(--accent-green);">AES-256</strong>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        </div>
+        <div class="mini-desc">End-to-End Secured</div>
+        <div id="device-id-display" class="device-id hidden mt-8"></div>
+      </div>
+
+      <div class="side-foot">v2.0.0 &middot; Secure Mode Enabled</div>
+    </aside>
+
+    <div id="connectivity-banner" class="hidden"><span id="banner-text"></span></div>
 
     <div id="main-content">
+
       <div id="view-mesh" class="view active">
-        <div class="card">
-          <div class="card-title">Mesh Status</div>
-          <div id="mesh-stats" class="stats-grid">
-            <div class="stat-item">
-              <div id="stat-direct-peers" class="stat-value">0</div>
-              <div class="stat-label">Direct Peers</div>
+        <div class="dashboard">
+
+          <section class="hero panel glow-edge">
+            <div class="hero-bg"><canvas id="map-canvas" aria-hidden="true"></canvas></div>
+
+            <div class="live-feed" aria-hidden="true">
+              <div class="live-feed-title">LIVE FEED</div>
+              <div id="live-feed" class="live-feed-body"></div>
+              <div id="hex-feed" class="hex-feed"></div>
             </div>
-            <div class="stat-item">
-              <div id="stat-messages" class="stat-value">0</div>
-              <div class="stat-label">Messages</div>
+
+            <div class="hero-content">
+              <div class="hero-top">
+                <span class="eyebrow"><span class="dot"></span> LifeLine Mesh Network</span>
+                <div class="hero-top-right">
+                  <span id="system-status-pill" class="status-pill"><span class="dot"></span> SYSTEM ONLINE</span>
+                  <button class="icon-btn" id="signal-indicator" aria-label="Signal strength">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14 0"/><path d="M1.5 9a16 16 0 0 1 21 0"/><path d="M8.5 16.1a6 6 0 0 1 7 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+                  </button>
+                </div>
+              </div>
+              <h1 class="hero-title">Stay <span class="accent">Connected.</span><br>Stay <span class="accent">Safe.</span></h1>
+              <p class="hero-sub">A decentralized mesh network for emergency communication when it matters most.</p>
+              <div class="hero-meta">
+                <span class="meta-active"><span class="dot"></span> Mesh Active</span>
+                <span class="divider"></span>
+                <span><b id="hero-peer-count">0</b> Peers Connected</span>
+              </div>
             </div>
-            <div class="stat-item">
-              <div id="stat-relayed" class="stat-value">0</div>
-              <div class="stat-label">Relayed</div>
-            </div>
-            <div class="stat-item">
-              <div id="stat-uptime" class="stat-value">0s</div>
-              <div class="stat-label">Uptime</div>
+          </section>
+
+          <div class="dash-main">
+            <section class="panel section">
+              <div class="section-title">Mesh Status</div>
+              <div class="stat-grid">
+                <div class="stat-card tilt">
+                  <div class="stat-head">
+                    <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+                    <span class="stat-value" id="stat-direct-peers">0</span>
+                  </div>
+                  <div class="stat-name">Direct Peers</div>
+                  <div class="stat-desc">Nearby devices</div>
+                </div>
+                <div class="stat-card tilt">
+                  <div class="stat-head">
+                    <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                    <span class="stat-value" id="stat-messages">0</span>
+                  </div>
+                  <div class="stat-name">Messages</div>
+                  <div class="stat-desc">Total messages</div>
+                </div>
+                <div class="stat-card tilt">
+                  <div class="stat-head">
+                    <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg></span>
+                    <span class="stat-value" id="stat-relayed">0</span>
+                  </div>
+                  <div class="stat-name">Relayed</div>
+                  <div class="stat-desc">Through network</div>
+                </div>
+                <div class="stat-card tilt is-purple">
+                  <div class="stat-head">
+                    <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 12 6 12 9 21 15 3 18 12 22 12"/></svg></span>
+                    <span class="stat-value" id="stat-uptime">0s</span>
+                  </div>
+                  <div class="stat-name">Uptime</div>
+                  <div class="stat-desc">Network uptime</div>
+                </div>
+              </div>
+            </section>
+
+            <div class="two-col">
+              <section class="panel section">
+                <div class="section-title">Connected Peers</div>
+                <ul id="peer-list" class="peer-list">
+                  <li class="peer-empty">
+                    <span class="wifi-pulse"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14 0"/><path d="M1.5 9a16 16 0 0 1 21 0"/><path d="M8.5 16.1a6 6 0 0 1 7 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg></span>
+                    <div class="pe-title">No Peers Connected</div>
+                    <div class="pe-desc">Pair a device to start building your mesh network.</div>
+                    <button class="btn btn-primary" data-nav-to="pair">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                      Pair a Device
+                    </button>
+                  </li>
+                </ul>
+              </section>
+
+              <section class="panel section">
+                <div class="section-title">Quick Actions</div>
+                <button id="btn-pair-device" class="action-row">
+                  <span class="action-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>
+                  <span class="action-txt"><span class="action-title">Pair New Device</span><span class="action-sub">Connect to a nearby device</span></span>
+                  <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polyline points="9 18 15 12 9 6"/></svg></span>
+                </button>
+                <button class="action-row" data-nav-to="chat">
+                  <span class="action-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.3 8.5 8.5 0 0 1-3.5-.7L3 21l1.9-5.5A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg></span>
+                  <span class="action-txt"><span class="action-title">Broadcast Message</span><span class="action-sub">Send message to all peers</span></span>
+                  <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polyline points="9 18 15 12 9 6"/></svg></span>
+                </button>
+                <button class="action-row" data-scroll-top="1">
+                  <span class="action-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4.5 8-11.5V5l-8-3-8 3v5.5C4 17.5 12 22 12 22z"/></svg></span>
+                  <span class="action-txt"><span class="action-title">View Network Map</span><span class="action-sub">See live topology</span></span>
+                  <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polyline points="9 18 15 12 9 6"/></svg></span>
+                </button>
+              </section>
             </div>
           </div>
-        </div>
 
-        <div class="card">
-          <div class="card-title">Connected Peers</div>
-          <ul id="peer-list" class="peer-list">
-            <li class="peer-item" style="justify-content:center;color:var(--text-muted);padding:20px 0;">
-              No peers connected. Pair a device to start.
-            </li>
-          </ul>
-        </div>
+          <div class="dash-rail">
+            <section class="panel section">
+              <div class="section-title">Network Monitor</div>
+              <div class="radar-wrap"><canvas id="radar-canvas" aria-hidden="true"></canvas></div>
+              <div class="health-row"><span>Network Health</span><b id="net-health">100%</b></div>
+              <div class="health-dots" id="health-dots"></div>
+            </section>
 
-        <div class="card">
-          <div class="card-title">Actions</div>
-          <div class="flex flex-col gap-8">
-            <button id="btn-pair-device" class="btn btn-primary w-full">📷 Pair a Device</button>
+            <section class="panel section">
+              <div class="section-title">Network Info</div>
+              <div class="info-row"><span class="info-k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></svg> Network ID</span><span class="info-v" id="info-network-id">LifeLine_····</span></div>
+              <div class="info-row"><span class="info-k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14 0"/><path d="M8.5 16.1a6 6 0 0 1 7 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg> Frequency</span><span class="info-v">2.4 GHz</span></div>
+              <div class="info-row"><span class="info-k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4.5 8-11.5V5l-8-3-8 3v5.5C4 17.5 12 22 12 22z"/></svg> Security</span><span class="info-v secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> AES-256 Encrypted</span></div>
+              <div class="info-row"><span class="info-k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 9 15M9 9l11 11"/></svg> Protocol</span><span class="info-v">Mesh v2.0</span></div>
+              <div class="info-row"><span class="info-k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h4l3 8 4-16 3 8h2"/></svg> Channel</span><span class="info-v">11 (Auto)</span></div>
+              <div class="info-row"><span class="info-k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Nodes Scanned</span><span class="info-v" id="info-nodes-scanned">0</span></div>
+            </section>
           </div>
+
         </div>
       </div>
 
       <div id="view-chat" class="view">
-        <div class="card" style="flex:1;display:flex;flex-direction:column;margin-bottom:0;">
-          <div class="card-title">Messages</div>
-          <div id="message-list" class="message-list">
-            <div class="text-center" style="color:var(--text-muted);padding:40px 0;">
-              No messages yet. Messages sent or received will appear here.
+        <div class="centered-view">
+          <section class="panel chat-panel">
+            <div class="section-title">Messages</div>
+            <div id="message-list" class="message-list">
+              <div class="text-center" style="color:var(--text-muted);padding:48px 0;">
+                No messages yet. Messages sent or received will appear here.
+              </div>
             </div>
-          </div>
-          <div class="compose-area">
-            <div class="priority-selector">
-              <button class="priority-btn priority-sos" data-priority="sos" title="Emergency">🆘</button>
-              <button class="priority-btn priority-normal active" data-priority="normal" title="Normal">💬</button>
-              <button class="priority-btn priority-chat" data-priority="low" title="Low">🗨️</button>
+            <div class="compose-area">
+              <div class="priority-selector">
+                <button class="priority-btn priority-sos active" data-priority="sos" title="Emergency" aria-label="Emergency priority">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                </button>
+                <button class="priority-btn priority-normal" data-priority="normal" title="Normal" aria-label="Normal priority">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.3 8.5 8.5 0 0 1-3.5-.7L3 21l1.9-5.5A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg>
+                </button>
+                <button class="priority-btn priority-chat" data-priority="chat" title="Chat" aria-label="Chat priority">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>
+                </button>
+              </div>
+              <textarea id="compose-input" class="compose-input" rows="1" placeholder="Type a message..." maxlength="2000"></textarea>
+              <button id="btn-send" class="btn btn-primary">Send</button>
             </div>
-            <textarea id="compose-input" class="compose-input" rows="1" placeholder="Type a message..." maxlength="2000"></textarea>
-            <button id="btn-send" class="btn btn-primary">Send</button>
-          </div>
+          </section>
         </div>
       </div>
 
       <div id="view-pair" class="view">
-        <div class="pairing-container">
-          <div class="card w-full">
-            <div class="card-title text-center">Pairing</div>
-            <div id="pairing-state" class="pairing-state">
-              <div class="state-icon">📡</div>
-              <div class="state-label">Ready to Pair</div>
-              <div class="state-desc">Choose to show your QR code or scan another device's QR.</div>
-            </div>
-          </div>
-
-          <div id="pairing-actions" class="flex flex-col gap-8 w-full">
-            <button id="btn-show-qr" class="btn btn-primary w-full">📤 Show My QR Code</button>
-            <button id="btn-scan-qr" class="btn btn-secondary w-full">📥 Scan QR Code</button>
-            <button id="btn-lan-connect" class="btn btn-secondary w-full">🌐 Connect via Code</button>
-            <button id="btn-cancel-pairing" class="btn btn-secondary w-full">← Back to Mesh</button>
-          </div>
-
-          <div id="lan-connect-input" class="hidden w-full">
-            <div class="card w-full">
-              <div class="card-title">Enter Connection Code</div>
-              <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
-                Paste the pairing code or connection link you received from the other device.
-              </p>
-              <textarea id="lan-connect-text" class="compose-input" rows="2" placeholder="Paste code or link here..."></textarea>
-              <div class="flex gap-8 mt-8">
-                <button id="btn-lan-connect-submit" class="btn btn-primary" style="flex:1;">Connect</button>
-                <button id="btn-lan-connect-cancel" class="btn btn-secondary">← Back</button>
+        <div class="centered-view">
+          <div class="pairing-container">
+            <div class="panel section w-full">
+              <div class="section-title text-center">Pairing</div>
+              <div id="pairing-state" class="pairing-state">
+                <div class="state-icon">📡</div>
+                <div class="state-label">Ready to Pair</div>
+                <div class="state-desc">Choose to show your QR code or scan another device's QR.</div>
               </div>
             </div>
-          </div>
 
-          <div id="qr-output" class="hidden w-full">
-            <div class="card w-full">
-              <div id="qr-container" class="qr-display">
-                <div class="text-center" style="color:var(--text-muted);padding:20px;">Generating QR code...</div>
+            <div id="pairing-actions" class="flex flex-col gap-8 w-full">
+              <button id="btn-show-qr" class="btn btn-primary w-full">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><line x1="14" y1="14" x2="14" y2="21"/><line x1="18" y1="14" x2="21" y2="14"/><line x1="21" y1="18" x2="21" y2="21"/></svg>
+                Show My QR Code
+              </button>
+              <button id="btn-scan-qr" class="btn btn-secondary w-full">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
+                Scan QR Code
+              </button>
+              <button id="btn-lan-connect" class="btn btn-secondary w-full">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></svg>
+                Connect via Code
+              </button>
+              <button id="btn-cancel-pairing" class="btn btn-secondary w-full">← Back to Mesh</button>
+            </div>
+
+            <div id="lan-connect-input" class="hidden w-full">
+              <div class="panel section w-full">
+                <div class="section-title">Enter Connection Code</div>
+                <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+                  Paste the pairing code or connection link you received from the other device.
+                </p>
+                <textarea id="lan-connect-text" class="compose-input" rows="2" placeholder="Paste code or link here..." style="width:100%;"></textarea>
+                <div class="flex gap-8 mt-8">
+                  <button id="btn-lan-connect-submit" class="btn btn-primary" style="flex:1;">Connect</button>
+                  <button id="btn-lan-connect-cancel" class="btn btn-secondary">← Back</button>
+                </div>
               </div>
             </div>
-            <div id="lan-info-container" class="hidden w-full">
-              <div class="card w-full" id="lan-info-card"></div>
-            </div>
-            <div id="qr-output-actions" class="flex flex-col gap-8">
-              <button id="btn-share-nearby" class="btn btn-secondary w-full">📤 Share via Nearby</button>
-              <button id="btn-copy-link" class="btn btn-secondary w-full">📋 Copy Connection Link</button>
-              <button id="btn-scan-response" class="btn btn-primary w-full hidden">📥 Scan Their Response</button>
-              <button id="btn-qr-done" class="btn btn-secondary w-full">✓ Done — Back to Mesh</button>
-            </div>
-          </div>
 
-          <div id="scanner-output" class="hidden w-full">
-            <div class="card w-full">
-              <div class="video-scanner" style="position:relative;">
-                <video id="scanner-video" autoplay playsinline muted></video>
-                <div id="scan-overlay" style="position:absolute;top:0;left:0;right:0;bottom:0;border:3px solid rgba(66,133,244,0.5);border-radius:12px;pointer-events:none;transition:border-color 0.3s;"></div>
+            <div id="qr-output" class="hidden w-full">
+              <div class="panel section w-full">
+                <div id="qr-container" class="qr-display">
+                  <div class="text-center" style="color:var(--text-muted);padding:20px;">Generating QR code...</div>
+                </div>
               </div>
-              <div id="scan-status" class="text-center mt-8" style="color:var(--text-muted);font-size:13px;">
-                Point camera at the other device's QR code
+              <div id="lan-info-container" class="hidden w-full">
+                <div class="panel section w-full" id="lan-info-card"></div>
+              </div>
+              <div id="qr-output-actions" class="flex flex-col gap-8">
+                <button id="btn-share-nearby" class="btn btn-secondary w-full">Share via Nearby</button>
+                <button id="btn-copy-link" class="btn btn-secondary w-full">Copy Connection Link</button>
+                <button id="btn-scan-response" class="btn btn-primary w-full hidden">Scan Their Response</button>
+                <button id="btn-qr-done" class="btn btn-secondary w-full">✓ Done — Back to Mesh</button>
               </div>
             </div>
-            <button id="btn-cancel-scan" class="btn btn-secondary w-full">← Cancel Scan</button>
-          </div>
 
-          <div id="pairing-progress" class="hidden w-full">
-            <div class="card w-full text-center">
-              <div class="loading-spinner mb-8"></div>
-              <div id="progress-text" class="state-label">Connecting...</div>
-              <div id="progress-detail" class="state-desc">Establishing secure P2P connection</div>
+            <div id="scanner-output" class="hidden w-full">
+              <div class="panel section w-full">
+                <div class="video-scanner">
+                  <video id="scanner-video" autoplay playsinline muted></video>
+                </div>
+                <div id="scan-status" class="text-center mt-8" style="color:var(--text-muted);font-size:13px;">
+                  Point camera at the other device's QR code
+                </div>
+              </div>
+              <button id="btn-cancel-scan" class="btn btn-secondary w-full">← Cancel Scan</button>
             </div>
-          </div>
 
-          <div id="pairing-success" class="hidden w-full">
-            <div class="card w-full text-center" style="border-color:var(--accent-green);">
-              <div class="state-icon" style="font-size:48px;">✅</div>
-              <div class="state-label" style="color:var(--accent-green);">Connected!</div>
-              <div id="success-peer-id" class="state-desc mt-8 device-id"></div>
+            <div id="pairing-progress" class="hidden w-full">
+              <div class="panel section w-full text-center">
+                <div class="loading-spinner mb-8"></div>
+                <div id="progress-text" class="state-label">Connecting...</div>
+                <div id="progress-detail" class="state-desc">Establishing secure P2P connection</div>
+              </div>
             </div>
-            <button id="btn-pairing-done" class="btn btn-primary w-full">Continue to Mesh</button>
+
+            <div id="pairing-success" class="hidden w-full">
+              <div class="panel section w-full text-center" style="border-color:rgba(69,240,122,0.5);box-shadow:var(--glow-green);">
+                <div class="state-icon" style="font-size:48px;">✅</div>
+                <div class="state-label" style="color:var(--accent-green);">Connected!</div>
+                <div id="success-peer-id" class="state-desc mt-8 device-id"></div>
+              </div>
+              <button id="btn-pairing-done" class="btn btn-primary w-full">Continue to Mesh</button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <nav id="nav-bar">
-      <button class="nav-btn active" data-view="mesh">
-        <span class="nav-icon">🛰️</span>
-        <span>Mesh</span>
-      </button>
-      <button class="nav-btn" data-view="chat">
-        <span class="nav-icon">💬</span>
-        <span>Chat</span>
-      </button>
-      <button class="nav-btn" data-view="pair">
-        <span class="nav-icon">📡</span>
-        <span>Pair</span>
-      </button>
-    </nav>
+    </div>
   </div>
 
   <div id="sos-confirm-modal" class="modal-overlay hidden">
     <div class="modal-content text-center">
-      <div style="font-size:48px;margin-bottom:12px;">🚨</div>
+      <div class="modal-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
       <h2>Send SOS Broadcast?</h2>
       <p>This will send an emergency message to all devices in the mesh. All connected peers will receive it immediately.</p>
       <div class="modal-actions">
         <button id="btn-sos-cancel" class="btn btn-secondary">Cancel</button>
-        <button id="btn-sos-confirm" class="btn btn-danger">🆘 Send SOS</button>
+        <button id="btn-sos-confirm" class="btn btn-danger">Send SOS</button>
       </div>
     </div>
   </div>
 
   <script src="src/signaling/qrcode-lib.js"></script>
   <script type="module" src="src/app.js"></script>
+  <script type="module" src="src/ui/effects.js"></script>
 </body>
 </html>
