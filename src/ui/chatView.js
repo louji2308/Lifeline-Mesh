@@ -1,13 +1,18 @@
 import { PRIORITY } from "../schema.js";
 
 export class ChatView {
-  constructor(messageLog, peerManager, onSendMessage) {
+  constructor(messageLog, peerManager, onSendMessage, deviceId = "") {
     this.messageLog = messageLog;
     this.peerManager = peerManager;
     this.onSendMessage = onSendMessage;
+    this._deviceId = deviceId;
     this._renderedIds = new Set();
     this._selectedPriority = PRIORITY.SOS;
     this._boundHandleNewMessage = this._handleNewMessage.bind(this);
+  }
+
+  setDeviceId(deviceId) {
+    this._deviceId = deviceId;
   }
 
   mount() {
@@ -73,7 +78,7 @@ export class ChatView {
     if (!container) return;
 
     const messages = this.messageLog.getSortedForDisplay("asc");
-    const deviceId = this.peerManager.deviceId || "";
+    const deviceId = this._deviceId;
 
     const empty = container.querySelector(".text-center");
     if (messages.length === 0) {

@@ -71,8 +71,24 @@ export class KeyManager {
     return key;
   }
 
+  importPeerDhKeyFromJwk(peerId, jwk) {
+    return this.importPeerPublicKey(peerId, jwk, "dh");
+  }
+
+  importPeerSigningKeyFromJwk(peerId, jwk) {
+    return this.importPeerPublicKey(peerId, jwk, "signing");
+  }
+
   getCachedPublicKey(peerId, keyType = "dh") {
     return this._publicKeyCache.get(`${peerId}-${keyType}`) || null;
+  }
+
+  getPeerDhPublicKey(peerId) {
+    return this.getCachedPublicKey(peerId, "dh");
+  }
+
+  getPeerSigningPublicKey(peerId) {
+    return this.getCachedPublicKey(peerId, "signing");
   }
 
   async generateGroupKey() {
@@ -109,6 +125,10 @@ export class KeyManager {
     } catch (error) {
       throw new Error(`Failed to import group key: ${error.message}`);
     }
+  }
+
+  hasGroupKey() {
+    return this.groupKey !== null;
   }
 
   getFingerprint() {

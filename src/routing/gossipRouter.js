@@ -1,6 +1,7 @@
 import { BloomFilter } from "./bloomFilter.js";
 import { PriorityQueue } from "./priorityQueue.js";
-import { MAX_TTL, hasExpired, validateMessageShape } from "../schema.js";
+import { MAX_TTL, hasExpired, validateMessageShape, isBroadcast } from "../schema.js";
+import { MESSAGE_TYPE } from "../transport/dataChannel.js";
 
 const MAX_RELAYS_PER_SECOND_PER_PEER = 20;
 const RELAY_WINDOW_MS = 1000;
@@ -39,12 +40,18 @@ export class GossipRouter {
     try {
       const message = event.detail.raw;
       if (!message || !message.id) return;
+      if (message.type === MESSAGE_TYPE.KEY_EXCHANGE ||
+          message.type === MESSAGE_TYPE.GROUP_KEY_ANNOUNCE ||
+          message.type === MESSAGE_TYPE.HEARTBEAT) {
+        return;
+      }
+
       if (this.seen.mightContain(message.id)) return;
       this.seen.add(message.id);
 
       if (hasExpired(message)) return;
 
-      if (message.recipientId === null || message.recipientId === this.myDeviceId) {
+      if (isBroadcast(message) || message.recipientId === this.myDeviceId) {
         try {
           this.onLocalDeliver(message);
         } catch (err) {

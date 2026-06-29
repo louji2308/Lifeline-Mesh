@@ -1,5 +1,4 @@
-import { configureDataChannel, sendJson, parseMessage } from "./dataChannel.js";
-import { MESSAGE_FLAGS } from "../schema.js";
+import { configureDataChannel, sendJson, parseMessage, isControlMessage, MESSAGE_TYPE } from "./dataChannel.js";
 
 export const CONNECTION_STATE = Object.freeze({
   CONNECTING: "connecting",
@@ -12,7 +11,7 @@ export const CONNECTION_STATE = Object.freeze({
 const HEARTBEAT_INTERVAL_MS = 5000;
 const HEARTBEAT_BACKGROUND_MS = 30000;
 const DISCONNECT_GRACE_PERIOD_MS = 30000;
-const STALE_PEER_CLEANUP_INTERVAL_MS = 120000;
+const STALE_PEER_CLEANUP_INTERVAL_MS = 60000;
 
 export class PeerManager extends EventTarget {
   constructor() {
@@ -21,8 +20,10 @@ export class PeerManager extends EventTarget {
     this.heartbeatIntervals = new Map();
     this.disconnectTimers = new Map();
     this._cleanupInterval = null;
+    this._lastCleanupRun = Date.now();
     this._batteryLevel = null;
     this._isBackgrounded = false;
+    this._visibilityHandler = null;
     this._startCleanupInterval();
     this._monitorVisibility();
   }
@@ -64,21 +65,29 @@ export class PeerManager extends EventTarget {
 
     dataChannel.onerror = (event) => {
       this.dispatchEvent(new CustomEvent("peer-error", {
-        detail: { peerId, error: event.error || "Unknown data channel error" },
+        detail: { peerId, error: event.error?.message || "Unknown data channel error" },
       }));
       this._handleDisconnect(peerId, CONNECTION_STATE.FAILED);
     };
 
     dataChannel.onmessage = (event) => {
       record.messagesReceived++;
-      record.bytesReceived += typeof event.data === "string"
-        ? event.data.length * 2
-        : event.data.byteLength;
+      const raw = event.data;
+      record.bytesReceived += typeof raw === "string"
+        ? raw.length * 2
+        : raw.byteLength || raw.length;
 
       const parsed = parseMessage(event);
-      if (parsed.plaintext === MESSAGE_FLAGS.HEARTBEAT || parsed.type === "heartbeat") {
+      if (parsed.type === MESSAGE_TYPE.HEARTBEAT || parsed.plaintext === "__heartbeat__") {
         record.lastHeartbeatAt = Date.now();
         record.missedHeartbeats = 0;
+        return;
+      }
+
+      if (isControlMessage(parsed) || parsed.type === MESSAGE_TYPE.KEY_EXCHANGE || parsed.type === MESSAGE_TYPE.GROUP_KEY_ANNOUNCE) {
+        this.dispatchEvent(new CustomEvent("control-message", {
+          detail: { peerId, message: parsed, timestamp: Date.now() },
+        }));
         return;
       }
 
@@ -90,7 +99,7 @@ export class PeerManager extends EventTarget {
     pc.oniceconnectionstatechange = () => {
       const state = pc.iceConnectionState;
       if (state === "failed") {
-        this._handleDisconnect(peerId, CONNECTION_STATE.FAILED);
+        this._attemptIceRestart(peerId);
       } else if (state === "disconnected") {
         this._handleDisconnect(peerId, CONNECTION_STATE.DISCONNECTED);
       } else if (state === "connected") {
@@ -112,10 +121,66 @@ export class PeerManager extends EventTarget {
       const state = pc.connectionState;
       if (state === "failed" || state === "disconnected") {
         this._handleDisconnect(peerId, CONNECTION_STATE.FAILED);
+      } else if (state === "connected") {
+        if (record.state === CONNECTION_STATE.CONNECTED) {
+          record.connectedAt = Date.now();
+          this.dispatchEvent(new CustomEvent("peer-reconnected", {
+            detail: { peerId, timestamp: Date.now() },
+          }));
+        }
       }
     };
 
+    if (dataChannel.readyState === "open") {
+      record.state = CONNECTION_STATE.CONNECTED;
+      record.connectedAt = Date.now();
+      this.dispatchEvent(new CustomEvent("peer-connected", {
+        detail: { peerId, timestamp: Date.now() },
+      }));
+      this._startHeartbeat(peerId);
+    }
+
     return record;
+  }
+
+  _attemptIceRestart(peerId) {
+    const record = this.peers.get(peerId);
+    if (!record || record.state === CONNECTION_STATE.CLOSED) return;
+    try {
+      record.pc.restartIce();
+      this.dispatchEvent(new CustomEvent("peer-ice-restart", {
+        detail: { peerId, timestamp: Date.now() },
+      }));
+    } catch {
+      this._handleDisconnect(peerId, CONNECTION_STATE.FAILED);
+    }
+  }
+
+  updatePeerId(oldId, newId) {
+    if (oldId === newId) return false;
+    if (!this.peers.has(oldId)) return false;
+    if (this.peers.has(newId)) {
+      this.removePeer(oldId);
+      return false;
+    }
+
+    const record = this.peers.get(oldId);
+    this.peers.delete(oldId);
+    this.peers.set(newId, record);
+
+    const heartbeat = this.heartbeatIntervals.get(oldId);
+    if (heartbeat) {
+      this.heartbeatIntervals.delete(oldId);
+      this.heartbeatIntervals.set(newId, heartbeat);
+    }
+
+    const disconnectTimer = this.disconnectTimers.get(oldId);
+    if (disconnectTimer) {
+      this.disconnectTimers.delete(oldId);
+      this.disconnectTimers.set(newId, disconnectTimer);
+    }
+
+    return true;
   }
 
   send(peerId, payload) {
@@ -134,6 +199,21 @@ export class PeerManager extends EventTarget {
       record.bytesSent += serialized.length * 2;
     }
     return success;
+  }
+
+  sendDirect(peerId, payload) {
+    const record = this.peers.get(peerId);
+    if (!record) return false;
+    if (record.dataChannel.readyState !== "open") return false;
+    try {
+      record.dataChannel.send(JSON.stringify(payload));
+      record.messagesSent++;
+      const serialized = JSON.stringify(payload);
+      record.bytesSent += serialized.length * 2;
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   broadcast(payload, excludePeerId = null) {
@@ -164,6 +244,10 @@ export class PeerManager extends EventTarget {
     this.dispatchEvent(new CustomEvent("peer-removed", {
       detail: { peerId },
     }));
+  }
+
+  hasPeer(peerId) {
+    return this.peers.has(peerId);
   }
 
   getPeer(peerId) {
@@ -224,7 +308,7 @@ export class PeerManager extends EventTarget {
     for (const peerId of this.getAllPeerIds()) {
       this.removePeer(peerId);
     }
-    if (typeof document !== "undefined") {
+    if (typeof document !== "undefined" && this._visibilityHandler) {
       document.removeEventListener("visibilitychange", this._visibilityHandler);
     }
   }
@@ -238,7 +322,7 @@ export class PeerManager extends EventTarget {
         return;
       }
       const sent = this.send(peerId, {
-        type: "heartbeat",
+        type: "__heartbeat__",
         timestamp: Date.now(),
       });
       if (!sent) {
@@ -276,10 +360,11 @@ export class PeerManager extends EventTarget {
       return;
     }
 
+    const oldState = record.state;
     record.state = newState;
     this._stopHeartbeat(peerId);
     this.dispatchEvent(new CustomEvent("peer-disconnected", {
-      detail: { peerId, state: newState, timestamp: Date.now() },
+      detail: { peerId, state: newState, previousState: oldState, timestamp: Date.now() },
     }));
 
     this._startDisconnectTimer(peerId);
@@ -305,13 +390,29 @@ export class PeerManager extends EventTarget {
   }
 
   _startCleanupInterval() {
+    this._lastCleanupRun = Date.now();
     this._cleanupInterval = setInterval(() => {
       const now = Date.now();
-      for (const [peerId, timer] of this.disconnectTimers) {
-        if (now >= timer._idleStart + DISCONNECT_GRACE_PERIOD_MS) {
-          this.removePeer(peerId);
+      for (const [peerId, record] of this.peers) {
+        if (record.state !== CONNECTION_STATE.CONNECTED &&
+            record.state !== CONNECTION_STATE.CONNECTING) {
+          const disconnectedSince = record.connectedAt
+            ? now - record.connectedAt
+            : now - this._lastCleanupRun;
+          if (disconnectedSince > DISCONNECT_GRACE_PERIOD_MS) {
+            this.removePeer(peerId);
+          }
         }
       }
+
+      for (const [peerId, record] of this.peers) {
+        if (record.state === CONNECTION_STATE.CONNECTED &&
+            now - record.lastHeartbeatAt > HEARTBEAT_INTERVAL_MS * 6) {
+          this._handleDisconnect(peerId, CONNECTION_STATE.FAILED);
+        }
+      }
+
+      this._lastCleanupRun = now;
     }, STALE_PEER_CLEANUP_INTERVAL_MS);
   }
 
@@ -327,4 +428,8 @@ export class PeerManager extends EventTarget {
     };
     document.addEventListener("visibilitychange", this._visibilityHandler);
   }
+}
+
+export function generateTempId() {
+  return `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }

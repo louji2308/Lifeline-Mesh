@@ -20,57 +20,115 @@ export function fromBase64Url(str) {
   return bytes.buffer;
 }
 
+async function compressWithStream(bytes) {
+  const cs = new CompressionStream("deflate-raw");
+  const writer = cs.writable.getWriter();
+  writer.write(bytes);
+  writer.close();
+  const reader = cs.readable.getReader();
+  const chunks = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  const totalLength = chunks.reduce((acc, c) => acc + c.byteLength, 0);
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return combined;
+}
+
+async function decompressWithStream(compressed) {
+  const ds = new DecompressionStream("deflate-raw");
+  const writer = ds.writable.getWriter();
+  writer.write(compressed);
+  writer.close();
+  const reader = ds.readable.getReader();
+  const chunks = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  const totalLength = chunks.reduce((acc, c) => acc + c.byteLength, 0);
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return combined;
+}
+
+function compressFallback(bytes) {
+  let result = [];
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i];
+    if (byte < 128) {
+      result.push(byte);
+    } else {
+      result.push((byte >> 6) | 192, (byte & 63) | 128);
+    }
+  }
+  return new Uint8Array(result);
+}
+
+function decompressFallback(compressed) {
+  const result = [];
+  for (let i = 0; i < compressed.length; i++) {
+    const byte = compressed[i];
+    if (byte < 128) {
+      result.push(byte);
+    } else if (byte < 192) {
+      continue;
+    } else {
+      if (i + 1 < compressed.length) {
+        const byte2 = compressed[++i];
+        result.push(((byte & 31) << 6) | (byte2 & 63));
+      }
+    }
+  }
+  return new Uint8Array(result);
+}
+
+const supportsCompressionStream = typeof CompressionStream !== "undefined" &&
+  typeof DecompressionStream !== "undefined";
+
 export async function compressPayload(data) {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(typeof data === "string" ? data : JSON.stringify(data));
-  if (typeof CompressionStream !== "undefined") {
-    const cs = new CompressionStream("deflate-raw");
-    const writer = cs.writable.getWriter();
-    writer.write(bytes);
-    writer.close();
-    const reader = cs.readable.getReader();
-    const chunks = [];
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
+  try {
+    if (supportsCompressionStream) {
+      const compressed = await compressWithStream(bytes);
+      return toBase64Url(compressed.buffer);
     }
-    const totalLength = chunks.reduce((acc, c) => acc + c.byteLength, 0);
-    const combined = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-      combined.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    return toBase64Url(combined.buffer);
-  }
-  return toBase64Url(bytes.buffer);
+  } catch {}
+  const fallback = compressFallback(bytes);
+  const prefix = new Uint8Array([0x46, 0x42]); // "FB" marker for fallback
+  const combined = new Uint8Array(prefix.length + fallback.length);
+  combined.set(prefix, 0);
+  combined.set(fallback, prefix.length);
+  return toBase64Url(combined.buffer);
 }
 
 export async function decompressPayload(payloadStr) {
-  if (typeof CompressionStream !== "undefined") {
-    const compressed = new Uint8Array(fromBase64Url(payloadStr));
-    const ds = new DecompressionStream("deflate-raw");
-    const writer = ds.writable.getWriter();
-    writer.write(compressed);
-    writer.close();
-    const reader = ds.readable.getReader();
-    const chunks = [];
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
+  const raw = new Uint8Array(fromBase64Url(payloadStr));
+  try {
+    if (supportsCompressionStream) {
+      const decompressed = await decompressWithStream(raw);
+      return new TextDecoder().decode(decompressed);
     }
-    const totalLength = chunks.reduce((acc, c) => acc + c.byteLength, 0);
-    const combined = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-      combined.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    return new TextDecoder().decode(combined);
+  } catch {}
+  if (raw[0] === 0x46 && raw[1] === 0x42) {
+    const extracted = raw.slice(2);
+    const decompressed = decompressFallback(extracted);
+    return new TextDecoder().decode(decompressed);
   }
-  return new TextDecoder().decode(new Uint8Array(fromBase64Url(payloadStr)));
+  return new TextDecoder().decode(raw);
 }
 
 function canvasQrEncode(text, size = 400) {

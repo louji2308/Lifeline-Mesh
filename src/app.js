@@ -2,10 +2,11 @@ import { PeerManager } from "./transport/peerManager.js";
 import { GossipRouter } from "./routing/gossipRouter.js";
 import { MessageLog } from "./crdt/messageLog.js";
 import { KeyManager } from "./crypto/keyManager.js";
-import { deriveSharedKey } from "./crypto/ecdh.js";
+import { deriveSharedKey, importPublicDhKey } from "./crypto/ecdh.js";
 import { encryptPayload, decryptPayload, signMessage, verifySignature } from "./crypto/cipher.js";
 import { openDb, getAllMessages, WriteBuffer } from "./storage/db.js";
 import { createMessage, PRIORITY, isBroadcast, isSOS } from "./schema.js";
+import { MESSAGE_TYPE } from "./transport/dataChannel.js";
 import { MeshStatusUI } from "./ui/meshStatus.js";
 import { ChatView } from "./ui/chatView.js";
 import { PairingView } from "./ui/pairingView.js";
@@ -22,9 +23,13 @@ class LifeLineMeshApp {
     this.chatView = null;
     this.pairingView = null;
     this._peerKeyMap = new Map();
+    this._peerSigningKeyMap = new Map();
     this._groupKey = null;
     this._initialized = false;
-    this._bootstrapPhase = null;
+    this._pendingConnections = new Map();
+    this._keyExchangeSent = new Set();
+    this._peerDeviceIds = new Map();
+    this._connectionToPeerId = new Map();
   }
 
   async boot() {
@@ -39,6 +44,8 @@ class LifeLineMeshApp {
       await this._initCrypto();
       this._initPeerManagerEvents();
       await this._rehydrateState();
+      this._initControlMessageHandler();
+      this._initConnectionManager();
       this._initRouter();
       this._initUI();
       this._initNavigation();
@@ -85,6 +92,18 @@ class LifeLineMeshApp {
       } else {
         console.log("[LifeLine] Device identity loaded:", this.keyManager.getFingerprint());
       }
+
+      if (!this.keyManager.hasGroupKey()) {
+        await this.keyManager.generateGroupKey();
+        if (this.db) {
+          await this.keyManager.saveToDb(this.db);
+        }
+        this._groupKey = this.keyManager.groupKey;
+        console.log("[LifeLine] Group key generated");
+      } else {
+        this._groupKey = this.keyManager.groupKey;
+        console.log("[LifeLine] Group key loaded from storage");
+      }
     } catch (error) {
       throw new Error(`Crypto init failed: ${error.message}`);
     }
@@ -120,14 +139,234 @@ class LifeLineMeshApp {
     });
 
     this.peerManager.addEventListener("peer-removed", (event) => {
-      console.log("[LifeLine] Peer removed:", event.detail.peerId);
-      this._peerKeyMap.delete(event.detail.peerId);
+      const { peerId } = event.detail;
+      console.log("[LifeLine] Peer removed:", peerId);
+      this._peerKeyMap.delete(peerId);
+      this._peerSigningKeyMap.delete(peerId);
       this._updateBanner();
     });
 
     this.peerManager.addEventListener("peer-error", (event) => {
       console.warn("[LifeLine] Peer error:", event.detail.peerId, event.detail.error);
     });
+
+    this.peerManager.addEventListener("peer-reconnected", (event) => {
+      const { peerId } = event.detail;
+      console.log("[LifeLine] Peer reconnected:", peerId);
+      this._updateBanner();
+    });
+  }
+
+  _initControlMessageHandler() {
+    this.peerManager.addEventListener("control-message", (event) => {
+      const { peerId, message } = event.detail;
+      if (message.type === MESSAGE_TYPE.KEY_EXCHANGE) {
+        this._handleKeyExchange(peerId, message).catch((err) => {
+          console.error("[LifeLine] Key exchange handler error:", err);
+        });
+      } else if (message.type === MESSAGE_TYPE.GROUP_KEY_ANNOUNCE) {
+        this._handleGroupKeyAnnounce(peerId, message).catch((err) => {
+          console.error("[LifeLine] Group key announce handler error:", err);
+        });
+      }
+    });
+  }
+
+  _initConnectionManager() {
+    this.pairingView.addEventListener("connection-ready", (event) => {
+      const { pc, dataChannel, tempId, isInitiator } = event.detail;
+      this._establishSecureConnection(tempId, pc, dataChannel, isInitiator);
+    });
+  }
+
+  async _establishSecureConnection(tempId, pc, dataChannel, isInitiator) {
+    console.log("[LifeLine] Establishing secure connection, tempId:", tempId);
+
+    this._pendingConnections.set(tempId, {
+      pc,
+      dataChannel,
+      isInitiator,
+      established: false,
+    });
+
+    dataChannel.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data);
+        if (parsed && parsed.type === MESSAGE_TYPE.KEY_EXCHANGE) {
+          this._completeKeyExchange(tempId, dataChannel, parsed).catch((err) => {
+            console.error("[LifeLine] Key exchange completion error:", err);
+          });
+        }
+      } catch {}
+    };
+
+    await this._sendKeyExchange(tempId, dataChannel);
+
+    if (!this._pendingConnections.has(tempId)) return;
+    this._pendingConnections.get(tempId).keyExchangeSent = true;
+  }
+
+  async _sendKeyExchange(tempId, dataChannel) {
+    try {
+      const myDhPubJwk = await this.keyManager.getPublicKeyJWK("dh");
+      const mySignPubJwk = await this.keyManager.getPublicKeyJWK("signing");
+
+      const keyExchangeMsg = {
+        type: MESSAGE_TYPE.KEY_EXCHANGE,
+        id: crypto.randomUUID(),
+        senderId: this.keyManager.getFingerprint(),
+        timestamp: Date.now(),
+        dhPublicKey: myDhPubJwk,
+        signingPublicKey: mySignPubJwk,
+      };
+
+      dataChannel.send(JSON.stringify(keyExchangeMsg));
+      console.log("[LifeLine] Key exchange sent");
+    } catch (error) {
+      console.error("[LifeLine] Failed to send key exchange:", error);
+    }
+  }
+
+  async _completeKeyExchange(tempId, dataChannel, msg) {
+    const pending = this._pendingConnections.get(tempId);
+    if (!pending) return;
+    if (pending.established) return;
+    pending.established = true;
+
+    const peerDeviceId = msg.senderId;
+    console.log("[LifeLine] Completing key exchange with peer:", peerDeviceId);
+
+    try {
+      await this.keyManager.importPeerDhKeyFromJwk(peerDeviceId, msg.dhPublicKey);
+      await this.keyManager.importPeerSigningKeyFromJwk(peerDeviceId, msg.signingPublicKey);
+
+      const peerDhKey = this.keyManager.getPeerDhPublicKey(peerDeviceId);
+      const sharedKey = await deriveSharedKey(this.keyManager.dhKeyPair.privateKey, peerDhKey);
+      this._peerKeyMap.set(peerDeviceId, sharedKey);
+      this._peerSigningKeyMap.set(peerDeviceId, this.keyManager.getPeerSigningPublicKey(peerDeviceId));
+
+      this._peerDeviceIds.set(tempId, peerDeviceId);
+      this._connectionToPeerId.set(tempId, peerDeviceId);
+
+      if (!this.peerManager.hasPeer(peerDeviceId)) {
+        this.peerManager.addPeer(peerDeviceId, pending.pc, dataChannel);
+      }
+
+      this.pairingView.onPeerIdentified(peerDeviceId);
+
+      if (this._groupKey && !this._keyExchangeSent.has(peerDeviceId)) {
+        this._keyExchangeSent.add(peerDeviceId);
+        await this._sendGroupKey(peerDeviceId);
+      }
+
+      if (!this._keyExchangeSent.has(peerDeviceId)) {
+        this._keyExchangeSent.add(peerDeviceId);
+      }
+
+      this._pendingConnections.delete(tempId);
+      console.log("[LifeLine] Secure connection established with:", peerDeviceId);
+    } catch (error) {
+      console.error("[LifeLine] Key exchange failed:", error);
+      this.pairingView._renderState("failed");
+      this.pairingView._updateProgress("Key exchange failed", error.message);
+      this._cleanupPending(tempId);
+    }
+  }
+
+  async _handleKeyExchange(peerId, msg) {
+    const senderId = msg.senderId;
+    if (!senderId) return;
+
+    if (this._peerKeyMap.has(senderId)) return;
+
+    try {
+      await this.keyManager.importPeerDhKeyFromJwk(senderId, msg.dhPublicKey);
+      await this.keyManager.importPeerSigningKeyFromJwk(senderId, msg.signingPublicKey);
+
+      const peerDhKey = this.keyManager.getPeerDhPublicKey(senderId);
+      const sharedKey = await deriveSharedKey(this.keyManager.dhKeyPair.privateKey, peerDhKey);
+      this._peerKeyMap.set(senderId, sharedKey);
+      this._peerSigningKeyMap.set(senderId, this.keyManager.getPeerSigningPublicKey(senderId));
+
+      const actualPeerId = this._connectionToPeerId.get(peerId);
+      if (actualPeerId && actualPeerId !== senderId) {
+        this.peerManager.updatePeerId(actualPeerId, senderId);
+        this._connectionToPeerId.set(peerId, senderId);
+      }
+
+      if (this._groupKey && !this._keyExchangeSent.has(senderId)) {
+        this._keyExchangeSent.add(senderId);
+        await this._sendGroupKey(senderId);
+      }
+
+      if (!this._keyExchangeSent.has(senderId)) {
+        this._keyExchangeSent.add(senderId);
+      }
+
+      console.log("[LifeLine] Key exchange processed for:", senderId);
+    } catch (error) {
+      console.error("[LifeLine] Key exchange processing failed:", error);
+    }
+  }
+
+  async _sendGroupKey(targetPeerId) {
+    try {
+      const sharedKey = this._peerKeyMap.get(targetPeerId);
+      if (!sharedKey) {
+        console.warn("[LifeLine] No shared key for", targetPeerId);
+        return;
+      }
+
+      const groupKeyRaw = await this.keyManager.exportGroupKey();
+      if (!groupKeyRaw) return;
+
+      const groupKeyArray = Array.from(new Uint8Array(groupKeyRaw));
+      const encrypted = await encryptPayload(sharedKey, {
+        key: groupKeyArray,
+        timestamp: Date.now(),
+      });
+
+      const announceMsg = {
+        type: MESSAGE_TYPE.GROUP_KEY_ANNOUNCE,
+        id: crypto.randomUUID(),
+        senderId: this.keyManager.getFingerprint(),
+        timestamp: Date.now(),
+        ciphertext: encrypted.ciphertext,
+        iv: encrypted.iv,
+      };
+
+      this.peerManager.send(targetPeerId, announceMsg);
+      console.log("[LifeLine] Group key sent to:", targetPeerId);
+    } catch (error) {
+      console.error("[LifeLine] Failed to send group key:", error);
+    }
+  }
+
+  async _handleGroupKeyAnnounce(peerId, msg) {
+    if (this._groupKey && this._initialized) return;
+
+    try {
+      const senderRealId = this._connectionToPeerId.get(peerId) || peerId;
+      const sharedKey = this._peerKeyMap.get(senderRealId);
+      if (!sharedKey) {
+        console.warn("[LifeLine] No shared key for group key decrypt, peer:", senderRealId);
+        return;
+      }
+
+      const decrypted = await decryptPayload(sharedKey, msg.ciphertext, msg.iv);
+      if (decrypted && decrypted.key) {
+        const keyBytes = new Uint8Array(decrypted.key);
+        await this.keyManager.importGroupKey(keyBytes);
+        this._groupKey = this.keyManager.groupKey;
+
+        if (this.db) {
+          await this.keyManager.saveToDb(this.db);
+        }
+        console.log("[LifeLine] Group key received and imported");
+      }
+    } catch (error) {
+      console.warn("[LifeLine] Failed to process group key announcement:", error.message);
+    }
   }
 
   _initRouter() {
@@ -143,14 +382,14 @@ class LifeLineMeshApp {
       this._persistMessage(message);
     }
 
-    this._handleAutoDecrypt(message);
-
-    this.peerManager.deviceId = this.keyManager.getFingerprint();
+    if (!message.decryptedText) {
+      this._handleAutoDecrypt(message);
+    }
   }
 
   async _handleAutoDecrypt(message) {
     try {
-      if (message.plaintext) {
+      if (message.plaintext && (!message.ciphertext || message.ciphertext === "")) {
         message.decryptedText = message.plaintext;
         return;
       }
@@ -162,11 +401,15 @@ class LifeLineMeshApp {
         const sharedKey = this._peerKeyMap.get(message.senderId);
         const decrypted = await decryptPayload(sharedKey, message.ciphertext, message.iv);
         message.decryptedText = typeof decrypted === "string" ? decrypted : JSON.stringify(decrypted);
+      } else if (message.ciphertext && message.ciphertext !== "") {
+        message.decryptedText = "[🔒 Encrypted]";
       } else {
-        message.decryptedText = "[Encrypted message]";
+        message.decryptedText = message.plaintext || "[No content]";
       }
     } catch {
-      message.decryptedText = "[Could not decrypt]";
+      message.decryptedText = message.ciphertext && message.ciphertext !== ""
+        ? "[⚠️ Could not decrypt]"
+        : (message.plaintext || "[No content]");
     }
   }
 
@@ -191,27 +434,28 @@ class LifeLineMeshApp {
         const encrypted = await encryptPayload(this._groupKey, text);
         msg.ciphertext = encrypted.ciphertext;
         msg.iv = encrypted.iv;
-        msg.signature = await signMessage(this.keyManager.signingKeyPair.privateKey, msg.id + msg.senderId + msg.ciphertext);
         msg.plaintext = "";
+        msg.signature = await signMessage(
+          this.keyManager.signingKeyPair.privateKey,
+          msg.id + msg.senderId + msg.ciphertext
+        );
       } else if (!isBroadcast(msg)) {
-        const targetId = msg.recipientId;
-        if (this._peerKeyMap.has(targetId)) {
-          const sharedKey = this._peerKeyMap.get(targetId);
+        for (const [peerId, sharedKey] of this._peerKeyMap) {
           const encrypted = await encryptPayload(sharedKey, text);
           msg.ciphertext = encrypted.ciphertext;
           msg.iv = encrypted.iv;
-          msg.signature = await signMessage(this.keyManager.signingKeyPair.privateKey, msg.id + msg.senderId + msg.ciphertext);
           msg.plaintext = "";
+          msg.signature = await signMessage(
+            this.keyManager.signingKeyPair.privateKey,
+            msg.id + msg.senderId + msg.ciphertext
+          );
+          break;
         }
       }
 
       msg.decryptedText = text;
 
       this.gossipRouter.sendLocal(msg);
-
-      if (isSOS(msg)) {
-        this._showSOSConfirmation();
-      }
 
       return msg;
     } catch (error) {
@@ -220,59 +464,69 @@ class LifeLineMeshApp {
     }
   }
 
+  async sendSOS(text) {
+    return this.sendMessage(text, PRIORITY.SOS);
+  }
+
   _initUI() {
     this.meshStatusUI = new MeshStatusUI(this.peerManager, this.messageLog, this.gossipRouter);
     this.meshStatusUI.mount();
 
-    this.chatView = new ChatView(this.messageLog, this.peerManager, (text, priority) => {
-      this.sendMessage(text, priority);
-    });
+    this.chatView = new ChatView(
+      this.messageLog,
+      this.peerManager,
+      (text, priority) => {
+        if (priority === PRIORITY.SOS) {
+          this._showSOSConfirmDialog(text);
+        } else {
+          this.sendMessage(text, priority);
+        }
+      },
+      this.keyManager.getFingerprint()
+    );
     this.chatView.mount();
 
     this.pairingView = new PairingView(this.peerManager, this.keyManager);
-    this.pairingView.setOnPeerConnected(async (peerId) => {
-      await this._exchangeKeys(peerId);
-    });
     this.pairingView.mount();
   }
 
-  async _exchangeKeys(peerId) {
-    try {
-      const myDhPubJwk = await this.keyManager.getPublicKeyJWK("dh");
-      const mySignPubJwk = await this.keyManager.getPublicKeyJWK("signing");
+  _showSOSConfirmDialog(text) {
+    const modal = document.getElementById("sos-confirm-modal");
+    if (!modal) return;
 
-      const keyExchangeMsg = {
-        type: "key_exchange",
-        senderId: this.keyManager.getFingerprint(),
-        dhPublicKey: myDhPubJwk,
-        signingPublicKey: mySignPubJwk,
-      };
+    modal.classList.remove("hidden");
 
-      this.peerManager.send(peerId, keyExchangeMsg);
+    const confirmBtn = document.getElementById("btn-sos-confirm");
+    const cancelBtn = document.getElementById("btn-sos-cancel");
 
-      if (!this._groupKey) {
-        await this.keyManager.generateGroupKey();
-        this._groupKey = this.keyManager.groupKey;
+    const cleanup = () => {
+      modal.classList.add("hidden");
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+    };
 
-        const groupKeyRaw = await this.keyManager.exportGroupKey();
-        const encryptedGroupKey = await encryptPayload(this._groupKey, {
-          key: Array.from(new Uint8Array(groupKeyRaw)),
-          timestamp: Date.now(),
-        });
+    const onConfirm = () => {
+      cleanup();
+      this.sendMessage(text, PRIORITY.SOS).then(() => {
+        this._showSOSBroadcastBanner();
+      });
+    };
 
-        const groupKeyMsg = {
-          type: "group_key_announce",
-          senderId: this.keyManager.getFingerprint(),
-          encryptedKey: encryptedGroupKey.ciphertext,
-          iv: encryptedGroupKey.iv,
-        };
+    const onCancel = () => {
+      cleanup();
+    };
 
-        setTimeout(() => {
-          this.peerManager.send(peerId, groupKeyMsg);
-        }, 500);
-      }
-    } catch (error) {
-      console.warn("[LifeLine] Key exchange failed:", error.message);
+    confirmBtn.addEventListener("click", onConfirm, { once: true });
+    cancelBtn.addEventListener("click", onCancel, { once: true });
+  }
+
+  _showSOSBroadcastBanner() {
+    const banner = document.getElementById("connectivity-banner");
+    const text = document.getElementById("banner-text");
+    if (banner && text) {
+      banner.className = "offline";
+      text.textContent = "🚨 SOS message broadcasting to mesh...";
+      setTimeout(() => this._updateBanner(), 3000);
     }
   }
 
@@ -349,23 +603,22 @@ class LifeLineMeshApp {
 
     if (!modal || !cancelBtn || !confirmBtn) return;
 
-    cancelBtn.addEventListener("click", () => modal.classList.add("hidden"));
-    confirmBtn.addEventListener("click", () => modal.classList.add("hidden"));
-
     modal.addEventListener("click", (event) => {
-      if (event.target === modal) modal.classList.add("hidden");
+      if (event.target === modal) {
+        modal.classList.add("hidden");
+      }
     });
   }
 
-  _showSOSConfirmation() {
-    const modal = document.getElementById("sos-confirm-modal");
-    if (modal) modal.classList.remove("hidden");
-    const banner = document.getElementById("connectivity-banner");
-    const text = document.getElementById("banner-text");
-    if (banner && text) {
-      banner.className = "offline";
-      text.textContent = "🚨 SOS message broadcasting to mesh...";
-      setTimeout(() => this._updateBanner(), 3000);
+  _cleanupPending(tempId) {
+    const pending = this._pendingConnections.get(tempId);
+    if (pending) {
+      try {
+        if (pending.pc && pending.pc.signalingState !== "closed") {
+          pending.pc.close();
+        }
+      } catch {}
+      this._pendingConnections.delete(tempId);
     }
   }
 

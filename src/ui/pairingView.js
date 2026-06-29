@@ -1,5 +1,6 @@
 import { createOffer, answerOffer, completeHandshake, SignalingError } from "../signaling/qrSignaling.js";
 import { renderQRCode, startCamera, stopCamera, scanQRCode } from "../signaling/qrCodec.js";
+import { generateTempId } from "../transport/peerManager.js";
 
 export const PAIRING_STATE = Object.freeze({
   IDLE: "idle",
@@ -10,8 +11,9 @@ export const PAIRING_STATE = Object.freeze({
   FAILED: "failed",
 });
 
-export class PairingView {
+export class PairingView extends EventTarget {
   constructor(peerManager, keyManager) {
+    super();
     this.peerManager = peerManager;
     this.keyManager = keyManager;
     this._state = PAIRING_STATE.IDLE;
@@ -19,11 +21,7 @@ export class PairingView {
     this._currentDataChannel = null;
     this._pendingPeerId = null;
     this._scanInterval = null;
-    this._onPeerConnected = null;
-  }
-
-  setOnPeerConnected(callback) {
-    this._onPeerConnected = callback;
+    this._isInitiator = false;
   }
 
   mount() {
@@ -47,11 +45,11 @@ export class PairingView {
   }
 
   _removeEventListeners() {
-    // Cleanup is handled by replacing elements or using once handlers
   }
 
   async _startOfferFlow() {
     try {
+      this._isInitiator = true;
       this._renderState(PAIRING_STATE.CONNECTING);
       this._updateProgress("Generating pairing code...", "Creating secure P2P offer");
 
@@ -69,7 +67,7 @@ export class PairingView {
 
       this._currentPc.onconnectionstatechange = () => {
         if (this._currentPc.connectionState === "connected") {
-          this._handleNewConnection(this._currentPc, this._currentDataChannel, "qr-peer");
+          this._onPeerConnected(this._currentPc, this._currentDataChannel);
         }
       };
     } catch (error) {
@@ -82,6 +80,7 @@ export class PairingView {
 
   async _startScanFlow() {
     try {
+      this._isInitiator = false;
       this._renderState(PAIRING_STATE.SCANNING);
       const video = document.getElementById("scanner-video");
       if (!video) return;
@@ -95,7 +94,6 @@ export class PairingView {
             this._handleScannedOffer(scanned);
           }
         } catch {
-          // continue scanning
         }
       }, 500);
     } catch (error) {
@@ -124,7 +122,7 @@ export class PairingView {
 
       this._currentPc.onconnectionstatechange = () => {
         if (this._currentPc.connectionState === "connected") {
-          this._handleNewConnection(this._currentPc, this._currentDataChannel, "qr-peer");
+          this._onPeerConnected(this._currentPc, this._currentDataChannel);
         }
       };
     } catch (error) {
@@ -135,18 +133,28 @@ export class PairingView {
     }
   }
 
-  async _handleNewConnection(pc, dataChannel, peerId) {
+  _onPeerConnected(pc, dataChannel) {
+    const tempId = generateTempId();
+    this._pendingPeerId = tempId;
+
+    this.dispatchEvent(new CustomEvent("connection-ready", {
+      detail: {
+        pc,
+        dataChannel,
+        tempId,
+        isInitiator: this._isInitiator,
+      },
+    }));
+
     this._renderState(PAIRING_STATE.CONNECTED);
-
     const displayId = document.getElementById("success-peer-id");
-    if (displayId) displayId.textContent = `Peer: ${peerId}`;
+    if (displayId) displayId.textContent = "Exchanging keys...";
+  }
 
-    this.peerManager.addPeer(peerId, pc, dataChannel);
-    this._pendingPeerId = peerId;
-
-    if (this._onPeerConnected) {
-      this._onPeerConnected(peerId);
-    }
+  onPeerIdentified(deviceId) {
+    const displayId = document.getElementById("success-peer-id");
+    if (displayId) displayId.textContent = `Peer: ${deviceId}`;
+    this._pendingPeerId = deviceId;
   }
 
   _stopScanning() {
@@ -175,6 +183,7 @@ export class PairingView {
       this._currentPc = null;
     }
     this._currentDataChannel = null;
+    this._pendingPeerId = null;
   }
 
   _renderState(state) {
