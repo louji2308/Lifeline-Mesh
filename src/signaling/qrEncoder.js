@@ -160,9 +160,13 @@ function placeDarkModule(matrix) {
 
 function placeAlignment(matrix, centers) {
   if (centers.length < 2) return;
+  const first = centers[0];
+  const last = centers[centers.length - 1];
   for (const cy of centers) {
     for (const cx of centers) {
-      if (cx === 6 && cy === 6) continue;
+      if ((cx === first && cy === first) ||
+          (cx === first && cy === last) ||
+          (cx === last && cy === first)) continue;
       for (let r = -2; r <= 2; r++) {
         for (let c = -2; c <= 2; c++) {
           const nx = cx + c;
@@ -329,14 +333,52 @@ function placeData(matrix, dataBits, eccBits) {
   }
 }
 
+function addEccAndInterleave(padded, version) {
+  const rawCW = Math.floor(getNumRawDataModules(version) / 8);
+  const dataLen = getNumDataCodewords(version);
+  const blockEccLen = ECC_TABLE.M.cwPerBlock[version];
+  const numBlocks = ECC_TABLE.M.numBlocks[version];
+  const numShortBlocks = numBlocks - rawCW % numBlocks;
+  const shortBlockDataLen = Math.floor(rawCW / numBlocks) - blockEccLen;
+
+  const blocks = [];
+  let pos = 0;
+  for (let i = 0; i < numBlocks; i++) {
+    const blockDataLen = shortBlockDataLen + (i < numShortBlocks ? 0 : 1);
+    blocks.push({
+      data: padded.slice(pos, pos + blockDataLen),
+      ecc: rsEncode(padded.slice(pos, pos + blockDataLen), blockEccLen),
+    });
+    pos += blockDataLen;
+  }
+
+  const totalCW = rawCW;
+  const interleaved = new Uint8Array(totalCW);
+
+  let idx = 0;
+  for (let j = 0; j < shortBlockDataLen + 1; j++) {
+    for (let i = 0; i < numBlocks; i++) {
+      const blockDataLen = shortBlockDataLen + (i < numShortBlocks ? 0 : 1);
+      if (j < blockDataLen) {
+        interleaved[idx++] = blocks[i].data[j];
+      }
+    }
+  }
+
+  for (let j = 0; j < blockEccLen; j++) {
+    for (let i = 0; i < numBlocks; i++) {
+      interleaved[idx++] = blocks[i].ecc[j];
+    }
+  }
+
+  return interleaved;
+}
+
 export function createQRMatrix(text, eccLevel = "M") {
   const encoder = new TextEncoder();
   const dataBytes = encoder.encode(text);
   const version = getMinVersion(dataBytes.length);
   const size = version * 4 + 17;
-  const eccCount = ECC_TABLE[eccLevel].cwPerBlock[version];
-  const numBlocks = ECC_TABLE[eccLevel].numBlocks[version];
-  const totalEcc = eccCount * numBlocks;
   const dataCount = getNumDataCodewords(version);
   const centers = getAlignmentPositions(version);
 
@@ -350,7 +392,11 @@ export function createQRMatrix(text, eccLevel = "M") {
     padded[i] = paddingBytes[(i - dataCodewords.length) % 2];
   }
 
-  const eccCodewords = rsEncode(padded, totalEcc);
+  const allCodewords = addEccAndInterleave(padded, version);
+
+  const rawCW = Math.floor(getNumRawDataModules(version) / 8);
+  const dataCW = allCodewords.slice(0, dataCount);
+  const eccCW = allCodewords.slice(dataCount, rawCW);
 
   const matrix = [];
   for (let r = 0; r < size; r++) {
@@ -366,11 +412,11 @@ export function createQRMatrix(text, eccLevel = "M") {
   if (version >= 7) placeVersionInfo(matrix, version);
 
   const dataBitArr = [];
-  for (const byte of padded) {
+  for (const byte of dataCW) {
     for (let i = 7; i >= 0; i--) dataBitArr.push((byte >> i) & 1);
   }
   const eccBitArr = [];
-  for (const byte of eccCodewords) {
+  for (const byte of eccCW) {
     for (let i = 7; i >= 0; i--) eccBitArr.push((byte >> i) & 1);
   }
   placeData(matrix, dataBitArr, eccBitArr);
