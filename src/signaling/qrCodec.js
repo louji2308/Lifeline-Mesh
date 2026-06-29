@@ -35,73 +35,14 @@ export function fromBase64Url(str) {
   return bytes.buffer;
 }
 
-async function compressWithStream(bytes) {
-  const cs = new CompressionStream("deflate-raw");
-  const writer = cs.writable.getWriter();
-  await writer.write(bytes);
-  await writer.close();
-  const reader = cs.readable.getReader();
-  const chunks = [];
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-  const totalLength = chunks.reduce((acc, c) => acc + c.byteLength, 0);
-  const combined = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    combined.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return combined;
-}
-
-async function decompressWithStream(compressed) {
-  const ds = new DecompressionStream("deflate-raw");
-  const writer = ds.writable.getWriter();
-  await writer.write(compressed);
-  await writer.close();
-  const reader = ds.readable.getReader();
-  const chunks = [];
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-  const totalLength = chunks.reduce((acc, c) => acc + c.byteLength, 0);
-  const combined = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    combined.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return combined;
-}
-
-const supportsCompressionStream = typeof CompressionStream !== "undefined" &&
-  typeof DecompressionStream !== "undefined";
-
 export async function compressPayload(data) {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(typeof data === "string" ? data : JSON.stringify(data));
-  try {
-    if (supportsCompressionStream) {
-      const compressed = await compressWithStream(bytes);
-      return toBase64Url(compressed.buffer);
-    }
-  } catch {}
   return toBase64Url(bytes.buffer);
 }
 
 export async function decompressPayload(payloadStr) {
   const raw = new Uint8Array(fromBase64Url(payloadStr));
-  try {
-    if (supportsCompressionStream) {
-      const decompressed = await decompressWithStream(raw);
-      return new TextDecoder().decode(decompressed);
-    }
-  } catch {}
   return new TextDecoder().decode(raw);
 }
 
