@@ -1,76 +1,38 @@
-# 🛰️ LifeLine Mesh
+# LifeLine Mesh
 
-**Serverless, offline-first emergency mesh communication network.**
-When disasters knock out cell towers, LifeLine Mesh lets people send help requests and coordinate — with zero infrastructure, zero servers, and zero cost. Every phone becomes part of the network itself.
+**Serverless, offline-first emergency communication for when the internet goes down.**
 
-## The Problem
-
-When disasters strike — earthquakes, hurricanes, protests, or internet blackouts — cell towers fail, servers go down, and people lose the ability to call for help or coordinate with each other. Existing solutions require infrastructure that's exactly what got knocked out.
-
-## The Solution
-
-LifeLine Mesh turns any phone's browser into a mesh network node. No app store. No server. No internet required after the first load. Messages relay device-to-device via WebRTC, automatically routing around failed connections.
-
-```
-Phone A ────→ Phone B ────→ Phone C
-  (out of range, but message arrives
-   via relay through Phone B)
-```
+When disasters knock out cell towers or governments shut down the internet, people can't reach help or find their families. LifeLine Mesh turns any phone's browser into a mesh network node — no app store, no server, no internet required after the first load.
 
 ## How It Works
 
-- **📡 Discovery** — QR-code-based pairing. Zero signaling server. Devices exchange WebRTC connection info by showing and scanning QR codes on their screens.
-- **🔌 Transport** — WebRTC DataChannels for direct device-to-device communication. Encrypted by default (DTLS).
-- **🌐 Routing** — Epidemic gossip protocol with TTL (8 hops), Bloom-filter deduplication (8192 bits, 4 hashes), and a 3-tier priority queue (SOS > normal > chat).
-- **🧬 Consistency** — CRDT (Grow-only Set) message log with vector clocks. When mesh "islands" reconnect, message histories merge automatically with zero conflicts and zero data loss.
-- **🔐 Security** — End-to-end encryption via ECDH (P-256) key exchange + AES-GCM (256-bit). Every message is ECDSA-signed for tamper detection. Relay nodes mathematically cannot decrypt payloads they forward.
-- **📱 App Shell** — Installable PWA with cache-first Service Worker. Fully offline-capable after first load. Zero install friction.
+Six layers, each mapping to a folder under `src/`:
+
+- Discovery — QR-code-based pairing using a custom QR code generator (GF(256) + Reed-Solomon ECC). Zero signaling server.
+- Transport — WebRTC `RTCPeerConnection` + `RTCDataChannel` direct device-to-device links with automatic heartbeats and graceful disconnect handling.
+- Routing — Epidemic gossip protocol with TTL flood prevention, Bloom-filter-based deduplication, and a 3-tier priority queue (SOS messages always jump the line).
+- Consistency — Operation-based CRDT (G-Set) message log with vector clocks for causal ordering. Conflict-free merge when mesh "islands" reconnect.
+- Security — Per-link ECDH (P-256) key exchange, AES-GCM end-to-end encryption, and ECDSA message signing with live tamper detection.
+- Storage — IndexedDB for durable message history with batched write optimization and boot-time rehydration.
 
 ## Tech Stack
 
-| Layer | Technology | Cost |
-|---|---|---|
-| P2P Transport | WebRTC `RTCPeerConnection` / `RTCDataChannel` | $0 |
-| Signaling | Manual QR-code SDP exchange (no server) | $0 |
-| Encryption | WebCrypto `SubtleCrypto` (ECDH + AES-GCM + ECDSA) | $0 |
-| Storage | IndexedDB | $0 |
-| Offline Shell | Service Worker + Cache API | $0 |
-| QR Handling | Native `BarcodeDetector` API + canvas fallback | $0 |
-| Hosting | GitHub Pages / Netlify (static files only) | $0 |
-| Build Tooling | None — vanilla ES modules | $0 |
+| Layer | Technology |
+|-------|-----------|
+| P2P Transport | WebRTC (`RTCPeerConnection` / `RTCDataChannel`) |
+| Signaling | QR code manual SDP exchange (custom GF(256) encoder) |
+| Encryption | WebCrypto `SubtleCrypto` (ECDH + AES-GCM + ECDSA) |
+| Local Storage | IndexedDB |
+| Offline Shell | Service Worker + Cache API |
+| QR Scanning | Native `BarcodeDetector` API |
+| Hosting | Static hosting (GitHub Pages / Netlify) |
+| Build | None required — vanilla ES modules |
 
-**There is no backend. There is no bill. Every byte of compute, storage, and bandwidth is donated by the end-user's device, forever, at any scale.**
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                    UI Layer                          │
-│  (MeshStatus · ChatView · PairingView)              │
-├─────────────────────────────────────────────────────┤
-│                  Routing Layer                       │
-│  (GossipRouter · BloomFilter · PriorityQueue)        │
-├─────────────────────────────────────────────────────┤
-│               CRDT Consistency Layer                 │
-│  (MessageLog G-Set · VectorClock)                   │
-├─────────────────────────────────────────────────────┤
-│               Security Layer                         │
-│  (KeyManager · ECDH · AES-GCM · ECDSA)              │
-├─────────────────────────────────────────────────────┤
-│              Transport Layer                         │
-│  (PeerManager · RTCDataChannel)                     │
-├─────────────────────────────────────────────────────┤
-│             Discovery Layer                          │
-│  (QR Signaling · QR Codec)                          │
-├─────────────────────────────────────────────────────┤
-│          Storage Layer (IndexedDB)                   │
-│  + PWA Shell (Service Worker)                       │
-└─────────────────────────────────────────────────────┘
-```
+100% native browser APIs. **$0 to build. $0 to run, forever, at any scale.** Zero AI/LLM dependency.
 
 ## Live Demo
 
-[Demo URL — deploy to GitHub Pages or Netlify](#)
+[Live URL — coming soon]
 
 ## Run It Yourself
 
@@ -79,39 +41,73 @@ Phone A ────→ Phone B ────→ Phone C
 git clone https://github.com/louji2308/Lifeline-Mesh.git
 cd Lifeline-Mesh
 
-# Serve locally (no build step needed)
+# Serve locally (any static file server works)
 npx serve .
 # Or: python -m http.server 8080
-# Or: use VS Code Live Server extension
 ```
 
-Then open `http://localhost:3000` (or the port serve gives you) in any modern browser. Open it on 2+ devices on the same network, pair via QR codes, and start sending messages.
+Open `http://localhost:3000` (or the port `serve` gives you). WebRTC and camera access require either `localhost` or HTTPS — the app will not work over plain HTTP on a non-localhost address.
 
-**Important:** WebRTC camera access (for QR scanning) and Service Workers require HTTPS or `localhost`. For testing on physical devices over the same Wi-Fi, use `localhost` on your dev machine and access the IP directly.
+To test across multiple devices, deploy to GitHub Pages or use a tunnel like `ngrok`.
 
-## Tests
+### Multi-Device Test
 
-Open `tests/index.html` in a browser to run the unit test suite:
+1. Open the app on Device A. Tap **Pair Device** → **Show My QR Code**.
+2. On Device B, tap **Pair Device** → **Scan QR Code**. Point at Device A's screen.
+3. After scan, Device B shows a QR code. On Device A, tap **Scan Their Response** and scan B's code.
+4. Once paired, type a message on either device — it appears on the other.
 
-- Bloom Filter: dedup correctness, false-negative rate, export/import, optimal param sizing
-- Priority Queue: SOS-first ordering, draining, bucket stats
-- Vector Clocks: increment, merge, happened-before, concurrency detection
-- CRDT G-Set: idempotent add, commutative merge, serialization round-trip, pruning
+For three devices, pair A↔B and B↔C. Messages from A reach C via relay through B.
+
+## Project Structure
+
+```
+├── index.html                 # Single entry point — loads app.js as ES module
+├── manifest.json               # PWA manifest
+├── sw.js                       # Service Worker — offline cache-first
+├── icons/                      # App icons (SVG)
+├── tests/                      # Unit tests (run in browser)
+└── src/
+    ├── app.js                  # Boot sequence, wires all modules
+    ├── schema.js               # Message schema, helpers, validators
+    ├── signaling/
+    │   ├── qrSignaling.js      # WebRTC offer/answer exchange
+    │   ├── qrCodec.js          # QR rendering + compression wrapper
+    │   └── qrEncoder.js        # Full QR code generator (GF(256), RS)
+    ├── transport/
+    │   ├── peerManager.js      # Multi-peer connection lifecycle
+    │   └── dataChannel.js      # Message framing over DataChannel
+    ├── routing/
+    │   ├── bloomFilter.js      # Bloom filter deduplication
+    │   ├── priorityQueue.js    # 3-tier (SOS/normal/chat) relay queue
+    │   └── gossipRouter.js     # Core relay and forward engine
+    ├── crdt/
+    │   ├── vectorClock.js      # Causal clock helpers
+    │   └── messageLog.js       # G-Set CRDT with merge
+    ├── crypto/
+    │   ├── keyManager.js       # Device keypair generation and storage
+    │   ├── ecdh.js             # Shared secret derivation (P-256)
+    │   └── cipher.js           # AES-GCM encrypt/decrypt + ECDSA sign/verify
+    ├── storage/
+    │   └── db.js               # IndexedDB wrapper with write batching
+    └── ui/
+        ├── meshStatus.js       # Peer list and connection health
+        ├── chatView.js         # Message list and compose box
+        └── pairingView.js      # QR display and scanner
+```
 
 ## What's Next
 
-- **True Bloom filter sizing at scale** — dynamic filter resizing based on measured false-positive rate
-- **Map view** — visual mesh topology showing live peer positions and relay paths
-- **SOS broadcast mode** — one-tap emergency alert that propagates at maximum priority
-- **Group key rotation** — periodic re-keying for broadcast channel forward secrecy
-- **Bluetooth Low Energy mesh** — native wrapper for true off-grid communication beyond WebRTC range
+- LAN/Wi-Fi auto-discovery — instant peer discovery on shared networks
+- Multi-frame QR for larger SDP payloads at higher error-correction levels
+- Native Bluetooth Low Energy relay for truly off-grid range extension
 
 ## Known Limitations
 
-- QR pairing requires physical proximity (screen-to-camera) — a reasonable constraint for disaster/off-grid scenarios where devices are co-located
-- Broadcast SOS uses a shared group key (weaker than per-recipient E2E) — appropriate for "anyone nearby should read this" but documented as a known tradeoff
-- Full Sybil-resistance is not yet implemented — malicious devices can join the mesh but cannot forge or read encrypted messages
+- Broadcast SOS uses a shared mesh group key (not per-recipient E2E) — any mesh member can decrypt. This is documented in the code and is an accepted tradeoff for the "anyone nearby can read an SOS" use case.
+- Full Sybil-resistance and group-key rotation are future work.
+- QR scanning relies on the native `BarcodeDetector` API (Chromium-based browsers). Firefox and Safari fall back to camera preview without detection — QR remains scannable by the other device's camera.
 
 ## License
 
-MIT — see [LICENSE](./LICENSE)
+[MIT](LICENSE)
