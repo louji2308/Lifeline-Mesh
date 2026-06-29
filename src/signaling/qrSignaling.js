@@ -92,8 +92,10 @@ export async function answerOffer(scannedOfferPayload, deviceId) {
     const offerSdp = await decompressSdp(scannedOfferPayload);
     pc = new RTCPeerConnection(RTC_CONFIG);
 
-    const dataChannelReady = new Promise((resolve) => {
+    const dataChannelReady = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("Data channel not received within 15s")), 15000);
       pc.ondatachannel = (event) => {
+        clearTimeout(timeout);
         resolve(event.channel);
       };
     });
