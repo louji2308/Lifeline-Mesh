@@ -1,4 +1,4 @@
-import { createOffer, answerOffer, SignalingError } from "../signaling/qrSignaling.js";
+import { createOffer, answerOffer, completeHandshake, SignalingError } from "../signaling/qrSignaling.js";
 import { renderQRCode, startCamera, stopCamera, scanQRCode } from "../signaling/qrCodec.js";
 import { generateTempId } from "../transport/peerManager.js";
 
@@ -9,6 +9,11 @@ export const PAIRING_STATE = Object.freeze({
   CONNECTING: "connecting",
   CONNECTED: "connected",
   FAILED: "failed",
+});
+
+const SCAN_MODE = Object.freeze({
+  OFFER: "offer",
+  ANSWER: "answer",
 });
 
 export class PairingView extends EventTarget {
@@ -22,6 +27,7 @@ export class PairingView extends EventTarget {
     this._pendingPeerId = null;
     this._scanInterval = null;
     this._isInitiator = false;
+    this._scanMode = null;
   }
 
   mount() {
@@ -37,6 +43,7 @@ export class PairingView extends EventTarget {
   _setupEventListeners() {
     document.getElementById("btn-show-qr")?.addEventListener("click", () => this._startOfferFlow());
     document.getElementById("btn-scan-qr")?.addEventListener("click", () => this._startScanFlow());
+    document.getElementById("btn-scan-response")?.addEventListener("click", () => this._startAnswerScan());
     document.getElementById("btn-cancel-pairing")?.addEventListener("click", () => this._goToMesh());
     document.getElementById("btn-qr-done")?.addEventListener("click", () => this._goToMesh());
     document.getElementById("btn-cancel-scan")?.addEventListener("click", () => this._cancelScan());
@@ -62,7 +69,17 @@ export class PairingView extends EventTarget {
       const container = document.getElementById("qr-container");
       if (!container) return;
 
-      await renderQRCode(container, result.qrPayload, "Ask another device to scan this QR code");
+      const qrLabel = this._isInitiator
+        ? "Ask the other device to scan this QR, then tap 'Scan Their Response'"
+        : "Show this QR to the other device";
+
+      await renderQRCode(container, result.qrPayload, qrLabel);
+
+      const scanResponseBtn = document.getElementById("btn-scan-response");
+      if (scanResponseBtn) {
+        scanResponseBtn.classList.remove("hidden");
+      }
+
       this._pendingPeerId = null;
 
       this._currentPc.onconnectionstatechange = () => {
@@ -78,20 +95,41 @@ export class PairingView extends EventTarget {
     }
   }
 
+  async _startAnswerScan() {
+    if (!this._currentPc) {
+      console.error("[PairingView] No pending PC for answer scan");
+      return;
+    }
+    this._scanMode = SCAN_MODE.ANSWER;
+    this._startCameraScan("Point camera at the other device's QR code to complete pairing");
+  }
+
   async _startScanFlow() {
+    this._isInitiator = false;
+    this._scanMode = SCAN_MODE.OFFER;
+    this._startCameraScan("Point camera at the other device's QR code");
+  }
+
+  async _startCameraScan(statusText) {
     try {
-      this._isInitiator = false;
       this._renderState(PAIRING_STATE.SCANNING);
       const video = document.getElementById("scanner-video");
       if (!video) return;
+
+      const scanStatus = document.getElementById("scan-status");
+      if (scanStatus) scanStatus.textContent = statusText;
 
       await startCamera(video);
 
       this._scanInterval = setInterval(async () => {
         try {
           const scanned = await scanQRCode(video);
-          if (scanned) {
+          if (!scanned) return;
+
+          if (this._scanMode === SCAN_MODE.OFFER) {
             this._handleScannedOffer(scanned);
+          } else if (this._scanMode === SCAN_MODE.ANSWER) {
+            this._handleScannedAnswer(scanned);
           }
         } catch {
         }
@@ -106,7 +144,7 @@ export class PairingView extends EventTarget {
   async _handleScannedOffer(scannedPayload) {
     this._stopScanning();
     this._renderState(PAIRING_STATE.CONNECTING);
-    this._updateProgress("Processing pairing code...", "Establishing secure connection");
+    this._updateProgress("Processing pairing code...", "Creating secure P2P connection");
 
     try {
       const deviceId = this.keyManager.getFingerprint();
@@ -118,7 +156,12 @@ export class PairingView extends EventTarget {
       const container = document.getElementById("qr-container");
       if (!container) return;
 
-      await renderQRCode(container, result.qrPayload, "Show this back to the other device");
+      await renderQRCode(container, result.qrPayload, "Show this QR back to the other device to complete pairing");
+
+      const scanResponseBtn = document.getElementById("btn-scan-response");
+      if (scanResponseBtn) {
+        scanResponseBtn.classList.add("hidden");
+      }
 
       this._currentPc.onconnectionstatechange = () => {
         if (this._currentPc.connectionState === "connected") {
@@ -129,6 +172,22 @@ export class PairingView extends EventTarget {
       console.error("[PairingView] Answer flow failed:", error);
       this._renderState(PAIRING_STATE.FAILED);
       this._updateProgress("Pairing failed", error.message || "Could not complete handshake");
+      this._cleanup();
+    }
+  }
+
+  async _handleScannedAnswer(scannedPayload) {
+    this._stopScanning();
+    this._renderState(PAIRING_STATE.CONNECTING);
+    this._updateProgress("Completing handshake...", "Establishing secure P2P connection");
+
+    try {
+      await completeHandshake(this._currentPc, scannedPayload);
+      this._updateProgress("Handshake complete", "Waiting for connection...");
+    } catch (error) {
+      console.error("[PairingView] Handshake failed:", error);
+      this._renderState(PAIRING_STATE.FAILED);
+      this._updateProgress("Handshake failed", error.message || "Could not complete connection");
       this._cleanup();
     }
   }
@@ -184,6 +243,7 @@ export class PairingView extends EventTarget {
     }
     this._currentDataChannel = null;
     this._pendingPeerId = null;
+    this._scanMode = null;
   }
 
   _renderState(state) {
@@ -211,7 +271,11 @@ export class PairingView extends EventTarget {
         break;
       case PAIRING_STATE.SHOWING_QR:
         show("qr-output");
-        this._updateStateDisplay("📤", "Show Your QR Code", "Let the other device scan this code.");
+        if (this._isInitiator) {
+          this._updateStateDisplay("📤", "Show Your QR Code", "Let the other device scan this, then scan their response.");
+        } else {
+          this._updateStateDisplay("📤", "Show Your QR Code", "Show this QR back to the other device to complete pairing.");
+        }
         break;
       case PAIRING_STATE.SCANNING:
         show("scanner-output");

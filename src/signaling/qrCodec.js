@@ -1,3 +1,5 @@
+import { renderQRToCanvas } from "./qrEncoder.js";
+
 const QR_CODE_MIME = "image/png";
 
 export function toBase64Url(buffer) {
@@ -64,37 +66,6 @@ async function decompressWithStream(compressed) {
   return combined;
 }
 
-function compressFallback(bytes) {
-  let result = [];
-  for (let i = 0; i < bytes.length; i++) {
-    const byte = bytes[i];
-    if (byte < 128) {
-      result.push(byte);
-    } else {
-      result.push((byte >> 6) | 192, (byte & 63) | 128);
-    }
-  }
-  return new Uint8Array(result);
-}
-
-function decompressFallback(compressed) {
-  const result = [];
-  for (let i = 0; i < compressed.length; i++) {
-    const byte = compressed[i];
-    if (byte < 128) {
-      result.push(byte);
-    } else if (byte < 192) {
-      continue;
-    } else {
-      if (i + 1 < compressed.length) {
-        const byte2 = compressed[++i];
-        result.push(((byte & 31) << 6) | (byte2 & 63));
-      }
-    }
-  }
-  return new Uint8Array(result);
-}
-
 const supportsCompressionStream = typeof CompressionStream !== "undefined" &&
   typeof DecompressionStream !== "undefined";
 
@@ -107,12 +78,7 @@ export async function compressPayload(data) {
       return toBase64Url(compressed.buffer);
     }
   } catch {}
-  const fallback = compressFallback(bytes);
-  const prefix = new Uint8Array([0x46, 0x42]); // "FB" marker for fallback
-  const combined = new Uint8Array(prefix.length + fallback.length);
-  combined.set(prefix, 0);
-  combined.set(fallback, prefix.length);
-  return toBase64Url(combined.buffer);
+  return toBase64Url(bytes.buffer);
 }
 
 export async function decompressPayload(payloadStr) {
@@ -123,59 +89,12 @@ export async function decompressPayload(payloadStr) {
       return new TextDecoder().decode(decompressed);
     }
   } catch {}
-  if (raw[0] === 0x46 && raw[1] === 0x42) {
-    const extracted = raw.slice(2);
-    const decompressed = decompressFallback(extracted);
-    return new TextDecoder().decode(decompressed);
-  }
   return new TextDecoder().decode(raw);
 }
 
-function canvasQrEncode(text, size = 400) {
+function qrEncodeToCanvas(text, size = 400) {
   const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas 2D context not available");
-
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, size, size);
-
-  const moduleCount = text.length * 8 + 32;
-  const modulesPerSide = Math.ceil(Math.sqrt(moduleCount));
-  const moduleSize = Math.floor(size / (modulesPerSide + 4));
-  const offset = (size - moduleSize * modulesPerSide) / 2;
-
-  ctx.fillStyle = "#000000";
-  for (let row = 0; row < modulesPerSide; row++) {
-    for (let col = 0; col < modulesPerSide; col++) {
-      const idx = row * modulesPerSide + col;
-      const byteIdx = Math.floor(idx / 8);
-      const bitIdx = idx % 8;
-      if (byteIdx < text.length) {
-        if ((text.charCodeAt(byteIdx) >> bitIdx) & 1) {
-          ctx.fillRect(offset + col * moduleSize, offset + row * moduleSize, moduleSize, moduleSize);
-        }
-      }
-    }
-  }
-
-  const positions = [
-    { row: 0, col: 0 },
-    { row: 0, col: modulesPerSide - 7 },
-    { row: modulesPerSide - 7, col: 0 },
-  ];
-  ctx.fillStyle = "#000000";
-  for (const pos of positions) {
-    for (let r = 0; r < 7; r++) {
-      for (let c = 0; c < 7; c++) {
-        if (r === 0 || r === 6 || c === 0 || c === 6 || (r >= 2 && r <= 4 && c >= 2 && c <= 4)) {
-          ctx.fillRect(offset + (pos.col + c) * moduleSize, offset + (pos.row + r) * moduleSize, moduleSize, moduleSize);
-        }
-      }
-    }
-  }
-
+  renderQRToCanvas(text, canvas, size);
   return canvas;
 }
 
@@ -193,21 +112,21 @@ export async function renderQRCode(container, payload, label = "Scan this QR") {
   wrapper.className = "qr-display";
 
   if (segments.length === 1) {
-    const canvas = canvasQrEncode(compressed);
+    const canvas = qrEncodeToCanvas(compressed);
     canvas.className = "qr-canvas";
     wrapper.appendChild(canvas);
   } else {
     let currentIndex = 0;
     const frameLabel = document.createElement("div");
     frameLabel.className = "qr-frame-label";
-    const canvas = canvasQrEncode(segments[0]);
+    const canvas = qrEncodeToCanvas(segments[0]);
     canvas.className = "qr-canvas";
     const advanceBtn = document.createElement("button");
     advanceBtn.textContent = "Next →";
     advanceBtn.className = "qr-advance-btn";
     advanceBtn.addEventListener("click", () => {
       currentIndex = (currentIndex + 1) % segments.length;
-      const newCanvas = canvasQrEncode(segments[currentIndex]);
+      const newCanvas = qrEncodeToCanvas(segments[currentIndex]);
       newCanvas.className = "qr-canvas";
       canvas.replaceWith(newCanvas);
       frameLabel.textContent = `Frame ${currentIndex + 1}/${segments.length}`;
@@ -219,7 +138,7 @@ export async function renderQRCode(container, payload, label = "Scan this QR") {
     if (segments.length > 1) {
       const autoInterval = setInterval(() => {
         currentIndex = (currentIndex + 1) % segments.length;
-        const newCanvas = canvasQrEncode(segments[currentIndex]);
+        const newCanvas = qrEncodeToCanvas(segments[currentIndex]);
         newCanvas.className = "qr-canvas";
         const oldCanvas = wrapper.querySelector(".qr-canvas");
         if (oldCanvas) oldCanvas.replaceWith(newCanvas);

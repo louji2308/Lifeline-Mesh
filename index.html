@@ -569,7 +569,10 @@
                 <div class="text-center" style="color:var(--text-muted);padding:20px;">Generating QR code...</div>
               </div>
             </div>
-            <button id="btn-qr-done" class="btn btn-secondary w-full">✓ Done — Back to Mesh</button>
+            <div id="qr-output-actions" class="flex flex-col gap-8">
+              <button id="btn-scan-response" class="btn btn-primary w-full hidden">📥 Scan Their Response</button>
+              <button id="btn-qr-done" class="btn btn-secondary w-full">✓ Done — Back to Mesh</button>
+            </div>
           </div>
 
           <div id="scanner-output" class="hidden w-full">
