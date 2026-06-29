@@ -108,7 +108,7 @@ export async function decompressPayload(payloadStr) {
 function getQRVersion(text) {
   for (let v = 1; v <= 40; v++) {
     try {
-      QRCode.generate(v, text, QRCode.ErrorCorrectLevel.M);
+      qrcode.generate(v, text, qrcode.ErrorCorrectLevel.M);
       return v;
     } catch {}
   }
@@ -120,9 +120,9 @@ function qrEncodeToCanvas(text, size = 600) {
 
   let qr;
   let version;
-  for (const ecLevel of [QRCode.ErrorCorrectLevel.Q, QRCode.ErrorCorrectLevel.M]) {
+  for (const ecLevel of [qrcode.ErrorCorrectLevel.Q, qrcode.ErrorCorrectLevel.M]) {
     try {
-      qr = QRCode.generate(0, text, ecLevel);
+      qr = qrcode.generate(0, text, ecLevel);
       const mc = qr.getModuleCount();
       version = (mc - 17) / 4;
       if (version <= 25) break;
@@ -131,7 +131,7 @@ function qrEncodeToCanvas(text, size = 600) {
     }
   }
   if (!qr) {
-    qr = QRCode.generate(0, text, QRCode.ErrorCorrectLevel.L);
+    qr = qrcode.generate(0, text, qrcode.ErrorCorrectLevel.L);
     const mc = qr.getModuleCount();
     version = (mc - 17) / 4;
   }
@@ -171,7 +171,7 @@ function getDataCapacity(version) {
   const text = "A".repeat(5000);
   for (let v = version; v >= 1; v--) {
     try {
-      QRCode.generate(v, text.slice(0, 4000), QRCode.ErrorCorrectLevel.M);
+      qrcode.generate(v, text.slice(0, 4000), qrcode.ErrorCorrectLevel.M);
     } catch (e) {
       return v + 1 <= 40 ? getDataCapacity(v + 1) : 0;
     }
@@ -183,7 +183,7 @@ function binarySearchCapacity(version, low, high) {
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
     try {
-      QRCode.generate(version, "A".repeat(mid), QRCode.ErrorCorrectLevel.M);
+      qrcode.generate(version, "A".repeat(mid), qrcode.ErrorCorrectLevel.M);
       low = mid;
     } catch {
       high = mid - 1;
@@ -192,7 +192,7 @@ function binarySearchCapacity(version, low, high) {
   return low;
 }
 
-export async function renderQRCode(container, payload, label = "Scan this QR") {
+export async function renderqrcode(container, payload, label = "Scan this QR") {
   const strPayload = typeof payload === "string" ? payload : JSON.stringify(payload);
   const canvasEl = qrEncodeToCanvas(strPayload);
   canvasEl.className = "qr-canvas";
@@ -228,7 +228,7 @@ export async function renderQRCode(container, payload, label = "Scan this QR") {
   return strPayload;
 }
 
-export async function scanQRCode(videoElement) {
+export async function scanqrcode(videoElement) {
   const detector = getBarcodeDetector();
   if (!detector) return null;
   try {
