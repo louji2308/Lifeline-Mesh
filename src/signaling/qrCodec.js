@@ -2,6 +2,45 @@ import { renderQRToCanvas } from "./qrEncoder.js";
 
 const QR_CODE_MIME = "image/png";
 
+export class QRFrameScanner {
+  constructor() {
+    this._frames = {};
+    this._total = 0;
+  }
+
+  process(rawValue) {
+    const match = rawValue.match(/^F(\d+)\/(\d+):/);
+    if (match) {
+      const total = parseInt(match[1], 10);
+      const index = parseInt(match[2], 10);
+      const data = rawValue.slice(match[0].length);
+      if (total !== this._total && this._total !== 0) {
+        this.reset();
+      }
+      this._total = total;
+      this._frames[index] = data;
+      const collected = Object.keys(this._frames).length;
+      if (collected >= total) {
+        const parts = [];
+        for (let i = 1; i <= total; i++) {
+          if (!this._frames[i]) return { complete: false, progress: `${collected}/${total}`, missing: i };
+          parts.push(this._frames[i]);
+        }
+        const result = parts.join("");
+        this.reset();
+        return { complete: true, data: result };
+      }
+      return { complete: false, progress: `${collected}/${total}` };
+    }
+    return { complete: true, data: rawValue };
+  }
+
+  reset() {
+    this._frames = {};
+    this._total = 0;
+  }
+}
+
 export function toBase64Url(buffer) {
   const bytes = new Uint8Array(buffer);
   let binary = "";
@@ -98,53 +137,60 @@ function qrEncodeToCanvas(text, size = 400) {
   return canvas;
 }
 
+function encodeSegments(strPayload) {
+  const qrDataLen = 95;
+  const segments = [];
+  for (let i = 0; i < strPayload.length; i += qrDataLen) {
+    segments.push(strPayload.slice(i, i + qrDataLen));
+  }
+  if (segments.length === 1) return [{ data: segments[0], canvas: qrEncodeToCanvas(segments[0]) }];
+  return segments.map((seg, i) => {
+    const framed = `F${segments.length}/${i + 1}:${seg}`;
+    return { data: seg, framed, canvas: qrEncodeToCanvas(framed) };
+  });
+}
+
 export async function renderQRCode(container, payload, label = "Scan this QR") {
   const strPayload = typeof payload === "string" ? payload : JSON.stringify(payload);
-  const maxSegmentLength = 120;
-  const segments = [];
-  for (let i = 0; i < strPayload.length; i += maxSegmentLength) {
-    segments.push(strPayload.slice(i, i + maxSegmentLength));
-  }
+  const encoded = encodeSegments(strPayload);
 
   container.innerHTML = "";
   const wrapper = document.createElement("div");
   wrapper.className = "qr-display";
 
-  if (segments.length === 1) {
-    const canvas = qrEncodeToCanvas(strPayload);
-    canvas.className = "qr-canvas";
-    wrapper.appendChild(canvas);
-  } else {
+  const frameLabel = document.createElement("div");
+  frameLabel.className = "qr-frame-label";
+
+  const canvasEl = encoded[0].canvas;
+  canvasEl.className = "qr-canvas";
+  wrapper.appendChild(canvasEl);
+
+  if (encoded.length > 1) {
     let currentIndex = 0;
-    const frameLabel = document.createElement("div");
-    frameLabel.className = "qr-frame-label";
-    const canvas = qrEncodeToCanvas(segments[0]);
-    canvas.className = "qr-canvas";
+    frameLabel.textContent = `Frame 1/${encoded.length}`;
+    wrapper.insertBefore(frameLabel, canvasEl);
+
     const advanceBtn = document.createElement("button");
     advanceBtn.textContent = "Next →";
     advanceBtn.className = "qr-advance-btn";
     advanceBtn.addEventListener("click", () => {
-      currentIndex = (currentIndex + 1) % segments.length;
-      const newCanvas = qrEncodeToCanvas(segments[currentIndex]);
+      currentIndex = (currentIndex + 1) % encoded.length;
+      const newCanvas = encoded[currentIndex].canvas;
       newCanvas.className = "qr-canvas";
-      canvas.replaceWith(newCanvas);
-      frameLabel.textContent = `Frame ${currentIndex + 1}/${segments.length}`;
+      canvasEl.replaceWith(newCanvas);
+      frameLabel.textContent = `Frame ${currentIndex + 1}/${encoded.length}`;
     });
-    frameLabel.textContent = `Frame 1/${segments.length}`;
-    wrapper.appendChild(frameLabel);
-    wrapper.appendChild(canvas);
     wrapper.appendChild(advanceBtn);
-    if (segments.length > 1) {
-      const autoInterval = setInterval(() => {
-        currentIndex = (currentIndex + 1) % segments.length;
-        const newCanvas = qrEncodeToCanvas(segments[currentIndex]);
-        newCanvas.className = "qr-canvas";
-        const oldCanvas = wrapper.querySelector(".qr-canvas");
-        if (oldCanvas) oldCanvas.replaceWith(newCanvas);
-        frameLabel.textContent = `Frame ${currentIndex + 1}/${segments.length}`;
-      }, 3000);
-      wrapper.dataset.autoInterval = autoInterval;
-    }
+
+    const autoInterval = setInterval(() => {
+      currentIndex = (currentIndex + 1) % encoded.length;
+      const newCanvas = encoded[currentIndex].canvas;
+      newCanvas.className = "qr-canvas";
+      const oldCanvas = wrapper.querySelector(".qr-canvas");
+      if (oldCanvas) oldCanvas.replaceWith(newCanvas);
+      frameLabel.textContent = `Frame ${currentIndex + 1}/${encoded.length}`;
+    }, 3000);
+    wrapper.dataset.autoInterval = autoInterval;
   }
 
   const labelEl = document.createElement("p");

@@ -1,5 +1,5 @@
 import { createOffer, answerOffer, completeHandshake, SignalingError } from "../signaling/qrSignaling.js";
-import { renderQRCode, startCamera, stopCamera, scanQRCode } from "../signaling/qrCodec.js";
+import { renderQRCode, startCamera, stopCamera, scanQRCode, QRFrameScanner } from "../signaling/qrCodec.js";
 import { generateTempId } from "../transport/peerManager.js";
 import {
   getLocalIPs, shareConnection, showCopyableLink, createConnectionURL,
@@ -33,6 +33,8 @@ export class PairingView extends EventTarget {
     this._isInitiator = false;
     this._scanMode = null;
     this._currentQrPayload = null;
+    this._currentPairingCode = null;
+    this._qrFrameScanner = new QRFrameScanner();
     this._currentPairingCode = null;
   }
 
@@ -136,6 +138,7 @@ export class PairingView extends EventTarget {
 
   async _startCameraScan(statusText) {
     try {
+      this._qrFrameScanner.reset();
       this._renderState(PAIRING_STATE.SCANNING);
       const video = document.getElementById("scanner-video");
       if (!video) return;
@@ -148,12 +151,33 @@ export class PairingView extends EventTarget {
       this._scanInterval = setInterval(async () => {
         try {
           const scanned = await scanQRCode(video);
-          if (!scanned) return;
+          if (!scanned) {
+            if (!("BarcodeDetector" in globalThis)) {
+              const status = document.getElementById("scan-status");
+              if (status && !status.dataset.fallbackShown) {
+                status.dataset.fallbackShown = "1";
+                status.innerHTML = 'QR scanning not supported on this browser.<br>Use <b>Copy Connection Link</b> from the other device instead.';
+              }
+            }
+            return;
+          }
+
+          const result = this._qrFrameScanner.process(scanned);
+          if (!result.complete) {
+            const status = document.getElementById("scan-status");
+            if (status) status.textContent = `Scanning frames: ${result.progress}`;
+            return;
+          }
+
+          const rem = document.querySelector('[data-auto-interval]');
+          if (rem) {
+            clearInterval(rem.dataset.autoInterval);
+          }
 
           if (this._scanMode === SCAN_MODE.OFFER) {
-            this._handleScannedOffer(scanned);
+            this._handleScannedOffer(result.data);
           } else if (this._scanMode === SCAN_MODE.ANSWER) {
-            this._handleScannedAnswer(scanned);
+            this._handleScannedAnswer(result.data);
           }
         } catch {
         }
