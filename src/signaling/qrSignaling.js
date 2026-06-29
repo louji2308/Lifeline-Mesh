@@ -32,7 +32,8 @@ export async function createOffer(deviceId) {
     pc = new RTCPeerConnection(RTC_CONFIG);
     const dataChannel = pc.createDataChannel("mesh", {
       ordered: true,
-      negotiated: false,
+      negotiated: true,
+      id: 0,
     });
 
     const iceGatheringComplete = new Promise((resolve, reject) => {
@@ -92,12 +93,10 @@ export async function answerOffer(scannedOfferPayload, deviceId) {
     const offerSdp = await decompressSdp(scannedOfferPayload);
     pc = new RTCPeerConnection(RTC_CONFIG);
 
-    const dataChannelReady = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("Data channel not received within 15s")), 15000);
-      pc.ondatachannel = (event) => {
-        clearTimeout(timeout);
-        resolve(event.channel);
-      };
+    const dataChannel = pc.createDataChannel("mesh", {
+      ordered: true,
+      negotiated: true,
+      id: 0,
     });
 
     await pc.setRemoteDescription({ type: "offer", sdp: offerSdp });
@@ -125,8 +124,6 @@ export async function answerOffer(scannedOfferPayload, deviceId) {
     const rawSdp = pc.localDescription.sdp;
     const qrPayload = await compressSdp(rawSdp);
     console.log(`[Signaling] Answer created, raw SDP: ${rawSdp.length} bytes, compressed: ${qrPayload.length} chars`);
-
-    const dataChannel = await dataChannelReady;
 
     return {
       pc,
