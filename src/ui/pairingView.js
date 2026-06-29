@@ -2,8 +2,8 @@ import { createOffer, answerOffer, completeHandshake, SignalingError } from "../
 import { renderQRCode, startCamera, stopCamera, scanQRCode } from "../signaling/qrCodec.js";
 import { generateTempId } from "../transport/peerManager.js";
 import {
-  getLocalIPs, shareConnection, copyShareText, createConnectionURL,
-  generatePairingCode, renderLANInfo,
+  getLocalIPs, shareConnection, showCopyableLink, createConnectionURL,
+  renderLANInfo,
 } from "../signaling/lanDiscovery.js";
 
 export const PAIRING_STATE = Object.freeze({
@@ -366,9 +366,7 @@ export class PairingView extends EventTarget {
     container.classList.remove("hidden");
     card.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:13px;">Detecting network...</div>';
     const ips = await getLocalIPs();
-    const code = generatePairingCode(qrPayload);
-    this._currentPairingCode = code;
-    renderLANInfo(card, ips, code);
+    renderLANInfo(card, ips);
   }
 
   _showLANInput() {
@@ -386,16 +384,39 @@ export class PairingView extends EventTarget {
     const input = document.getElementById("lan-connect-text");
     if (!input) return;
     const raw = input.value.trim();
-    if (!raw) return;
+    if (!raw) {
+      this._updateProgress("Empty input", "Paste the connection link from the other device first");
+      return;
+    }
     let payload = raw;
     if (raw.startsWith("http://") || raw.startsWith("https://")) {
       try {
         const url = new URL(raw);
-        payload = url.searchParams.get("connect") || decodeURIComponent(url.hash.slice(9)) || raw;
-      } catch {}
+        const extracted = url.searchParams.get("connect") || decodeURIComponent(url.hash.slice(9) || "");
+        if (extracted) payload = extracted;
+      } catch {
+        this._updateProgress("Invalid link", "The pasted link is not a valid connection URL");
+        return;
+      }
     }
     this._hideLANInput();
-    await this._handleScannedOffer(payload);
+    this._renderState(PAIRING_STATE.CONNECTING);
+    this._updateProgress("Connecting...", "Establishing secure P2P connection");
+    try {
+      const deviceId = this.keyManager.getFingerprint();
+      const result = await answerOffer(payload, deviceId);
+      this._currentPc = result.pc;
+      this._currentDataChannel = result.dataChannel;
+      this._currentQrPayload = result.qrPayload;
+      this._currentPc.onconnectionstatechange = () => {
+        if (this._currentPc.connectionState === "connected") {
+          this._onPeerConnected(this._currentPc, this._currentDataChannel);
+        }
+      };
+    } catch (error) {
+      this._renderState(PAIRING_STATE.FAILED);
+      this._updateProgress("Connection failed", error.message || "Could not connect using the provided link");
+    }
   }
 
   async _handleShareNearby() {
@@ -410,9 +431,11 @@ export class PairingView extends EventTarget {
 
   async _handleCopyLink() {
     if (!this._currentQrPayload) return;
-    const ok = await copyShareText(this._currentQrPayload);
-    this._updateProgress(ok ? "Link copied" : "Could not copy",
-      "Paste the link into the other device's browser");
+    const url = createConnectionURL(this._currentQrPayload);
+    const linkContainer = document.getElementById("lan-info-card");
+    if (linkContainer) {
+      showCopyableLink(linkContainer, url);
+    }
   }
 
   async handleIncomingConnection(sdpPayload) {
@@ -428,6 +451,25 @@ export class PairingView extends EventTarget {
       const result = await answerOffer(sdpPayload, deviceId);
       this._currentPc = result.pc;
       this._currentDataChannel = result.dataChannel;
+      this._currentQrPayload = result.qrPayload;
+
+      this._renderState(PAIRING_STATE.SHOWING_QR);
+      const container = document.getElementById("qr-container");
+      if (!container) return;
+
+      await renderQRCode(container, result.qrPayload, "Show this QR back to the other device to complete pairing");
+
+      this._showLANInfo(result.qrPayload);
+
+      const copyBtn = document.getElementById("btn-copy-link");
+      if (copyBtn) copyBtn.classList.remove("hidden");
+
+      const shareBtn = document.getElementById("btn-share-nearby");
+      if (shareBtn) shareBtn.classList.remove("hidden");
+
+      const scanResponseBtn = document.getElementById("btn-scan-response");
+      if (scanResponseBtn) scanResponseBtn.classList.add("hidden");
+
       this._currentPc.onconnectionstatechange = () => {
         if (this._currentPc.connectionState === "connected") {
           this._onPeerConnected(this._currentPc, this._currentDataChannel);

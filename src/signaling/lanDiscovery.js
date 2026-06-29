@@ -45,27 +45,28 @@ export async function shareConnection(sdpPayload) {
       if (e.name === "AbortError") return "cancelled";
     }
   }
-  try {
-    await navigator.clipboard.writeText(url);
-    return "clipboard";
-  } catch {
-    return "fallback";
-  }
+  return "fallback";
 }
 
-export async function copyShareText(sdpPayload) {
-  const url = createConnectionURL(sdpPayload);
-  try {
-    await navigator.clipboard.writeText(url);
-    return true;
-  } catch {
-    const textArea = document.createElement("textarea");
-    textArea.value = url;
-    document.body.appendChild(textArea);
-    textArea.select();
-    document.execCommand("copy");
-    document.body.removeChild(textArea);
-    return false;
+export function showCopyableLink(container, url) {
+  container.innerHTML = `
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">
+      Connection Link — Copy and send to the other device
+    </div>
+    <input id="connection-link-input" type="text" readonly
+      value="${url.replace(/"/g, "&quot;")}"
+      style="width:100%;padding:10px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary);font-size:12px;font-family:monospace;word-break:break-all;"
+      onclick="this.select();navigator.clipboard?.writeText(this.value).catch(()=>{})">
+    <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+      Tap the link above to select, then copy. Or use the Share button below.
+    </div>
+  `;
+  const input = document.getElementById("connection-link-input");
+  if (input) {
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 100);
   }
 }
 
@@ -85,45 +86,11 @@ export function clearConnectionFromURL() {
   window.history.replaceState(null, "", url.toString());
 }
 
-function toBase62(num) {
-  const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-  if (num === 0) return "0";
-  let result = "";
-  while (num > 0) {
-    result = chars[num % 62] + result;
-    num = Math.floor(num / 62);
-  }
-  return result;
-}
-
-export function generatePairingCode(sdpPayload) {
-  let hash = 5381;
-  const str = typeof sdpPayload === "string" ? sdpPayload : JSON.stringify(sdpPayload);
-  for (let i = 0; i < Math.min(str.length, 64); i++) {
-    hash = ((hash << 5) + hash) + str.charCodeAt(i);
-    hash = hash & hash;
-  }
-  const code = toBase62(Math.abs(hash)).slice(0, 6).toUpperCase().padStart(6, "0");
-  return `${code.slice(0, 3)}-${code.slice(3)}`;
-}
-
-export function renderLANInfo(container, localIPs, pairingCode) {
+export function renderLANInfo(container, localIPs) {
   container.innerHTML = `
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
-      Same Wi-Fi Quick Connect
-    </div>
-    <div style="display:flex;flex-direction:column;gap:6px;align-items:center;">
-      <div style="font-size:12px;color:var(--text-secondary);">Your LAN IP</div>
-      <div style="font-family:monospace;font-size:14px;color:var(--text-primary);background:var(--bg-secondary);padding:4px 12px;border-radius:4px;">
-        ${localIPs.length > 0 ? localIPs.join(", ") : "Detecting..."}
-      </div>
-      <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">Pairing Code</div>
-      <div style="font-family:monospace;font-size:24px;font-weight:700;color:var(--accent-green);letter-spacing:4px;background:var(--bg-secondary);padding:6px 16px;border-radius:6px;">
-        ${pairingCode}
-      </div>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
-        Other device: enter this code on the "Enter Code" tab
-      </div>
+    <div style="font-size:12px;color:var(--text-muted);margin:0;">
+      Same Wi-Fi — Your LAN IP: 
+      <span style="font-family:monospace;color:var(--text-primary);font-weight:600;">${localIPs.length > 0 ? localIPs.join(", ") : "detecting..."}</span>
     </div>
   `;
 }
