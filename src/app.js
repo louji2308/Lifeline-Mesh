@@ -7,6 +7,7 @@ import { encryptPayload, decryptPayload, signMessage, verifySignature } from "./
 import { openDb, getAllMessages, WriteBuffer } from "./storage/db.js";
 import { createMessage, PRIORITY, isBroadcast, isSOS } from "./schema.js";
 import { MESSAGE_TYPE } from "./transport/dataChannel.js";
+import { extractConnectionFromURL, clearConnectionFromURL } from "./signaling/lanDiscovery.js";
 import { MeshStatusUI } from "./ui/meshStatus.js";
 import { ChatView } from "./ui/chatView.js";
 import { PairingView } from "./ui/pairingView.js";
@@ -58,6 +59,8 @@ class LifeLineMeshApp {
 
       this._initialized = true;
       console.log("[LifeLine] Boot complete. Device ID:", this.keyManager.getFingerprint());
+
+      this._checkConnectionURL();
     } catch (error) {
       console.error("[LifeLine] Boot failed:", error);
       this._showFatalError(error);
@@ -655,6 +658,24 @@ class LifeLineMeshApp {
       } catch {}
       this._pendingConnections.delete(tempId);
     }
+  }
+
+  _checkConnectionURL() {
+    const payload = extractConnectionFromURL();
+    if (!payload) return;
+    clearConnectionFromURL();
+    console.log("[LifeLine] Connection URL detected, initiating pairing...");
+    this._switchToView("pair");
+    setTimeout(() => {
+      this.pairingView.handleIncomingConnection(payload);
+    }, 100);
+  }
+
+  _switchToView(viewName) {
+    document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+    document.getElementById(`view-${viewName}`)?.classList.add("active");
+    document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelector(`.nav-btn[data-view="${viewName}"]`)?.classList.add("active");
   }
 
   _showFatalError(error) {

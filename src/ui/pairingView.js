@@ -1,6 +1,10 @@
 import { createOffer, answerOffer, completeHandshake, SignalingError } from "../signaling/qrSignaling.js";
 import { renderQRCode, startCamera, stopCamera, scanQRCode } from "../signaling/qrCodec.js";
 import { generateTempId } from "../transport/peerManager.js";
+import {
+  getLocalIPs, shareConnection, copyShareText, createConnectionURL,
+  generatePairingCode, renderLANInfo,
+} from "../signaling/lanDiscovery.js";
 
 export const PAIRING_STATE = Object.freeze({
   IDLE: "idle",
@@ -28,6 +32,8 @@ export class PairingView extends EventTarget {
     this._scanInterval = null;
     this._isInitiator = false;
     this._scanMode = null;
+    this._currentQrPayload = null;
+    this._currentPairingCode = null;
   }
 
   mount() {
@@ -49,6 +55,11 @@ export class PairingView extends EventTarget {
     document.getElementById("btn-cancel-scan")?.addEventListener("click", () => this._cancelScan());
     document.getElementById("btn-pairing-done")?.addEventListener("click", () => this._goToMesh());
     document.getElementById("btn-pair-device")?.addEventListener("click", () => this._goToPairing());
+    document.getElementById("btn-lan-connect")?.addEventListener("click", () => this._showLANInput());
+    document.getElementById("btn-lan-connect-cancel")?.addEventListener("click", () => this._hideLANInput());
+    document.getElementById("btn-lan-connect-submit")?.addEventListener("click", () => this._handleLANConnect());
+    document.getElementById("btn-share-nearby")?.addEventListener("click", () => this._handleShareNearby());
+    document.getElementById("btn-copy-link")?.addEventListener("click", () => this._handleCopyLink());
   }
 
   _removeEventListeners() {
@@ -64,6 +75,7 @@ export class PairingView extends EventTarget {
       const result = await createOffer(deviceId);
       this._currentPc = result.pc;
       this._currentDataChannel = result.dataChannel;
+      this._currentQrPayload = result.qrPayload;
 
       this._renderState(PAIRING_STATE.SHOWING_QR);
       const container = document.getElementById("qr-container");
@@ -71,13 +83,25 @@ export class PairingView extends EventTarget {
 
       const qrLabel = this._isInitiator
         ? "Ask the other device to scan this QR, then tap 'Scan Their Response'"
-        : "Show this QR to the other device";
+        : "Show this QR back to the other device";
 
       await renderQRCode(container, result.qrPayload, qrLabel);
 
+      this._showLANInfo(result.qrPayload);
+
+      const copyBtn = document.getElementById("btn-copy-link");
+      if (copyBtn) copyBtn.classList.remove("hidden");
+
+      const shareBtn = document.getElementById("btn-share-nearby");
+      if (shareBtn) shareBtn.classList.remove("hidden");
+
       const scanResponseBtn = document.getElementById("btn-scan-response");
       if (scanResponseBtn) {
-        scanResponseBtn.classList.remove("hidden");
+        if (this._isInitiator) {
+          scanResponseBtn.classList.remove("hidden");
+        } else {
+          scanResponseBtn.classList.add("hidden");
+        }
       }
 
       this._pendingPeerId = null;
@@ -151,12 +175,21 @@ export class PairingView extends EventTarget {
       const result = await answerOffer(scannedPayload, deviceId);
       this._currentPc = result.pc;
       this._currentDataChannel = result.dataChannel;
+      this._currentQrPayload = result.qrPayload;
 
       this._renderState(PAIRING_STATE.SHOWING_QR);
       const container = document.getElementById("qr-container");
       if (!container) return;
 
       await renderQRCode(container, result.qrPayload, "Show this QR back to the other device to complete pairing");
+
+      this._showLANInfo(result.qrPayload);
+
+      const copyBtn = document.getElementById("btn-copy-link");
+      if (copyBtn) copyBtn.classList.remove("hidden");
+
+      const shareBtn = document.getElementById("btn-share-nearby");
+      if (shareBtn) shareBtn.classList.remove("hidden");
 
       const scanResponseBtn = document.getElementById("btn-scan-response");
       if (scanResponseBtn) {
@@ -324,5 +357,87 @@ export class PairingView extends EventTarget {
     document.getElementById(`view-${viewName}`)?.classList.add("active");
     document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
     document.querySelector(`.nav-btn[data-view="${viewName}"]`)?.classList.add("active");
+  }
+
+  async _showLANInfo(qrPayload) {
+    const container = document.getElementById("lan-info-container");
+    const card = document.getElementById("lan-info-card");
+    if (!container || !card) return;
+    container.classList.remove("hidden");
+    card.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:13px;">Detecting network...</div>';
+    const ips = await getLocalIPs();
+    const code = generatePairingCode(qrPayload);
+    this._currentPairingCode = code;
+    renderLANInfo(card, ips, code);
+  }
+
+  _showLANInput() {
+    document.getElementById("pairing-actions")?.classList.add("hidden");
+    document.getElementById("lan-connect-input")?.classList.remove("hidden");
+  }
+
+  _hideLANInput() {
+    document.getElementById("lan-connect-input")?.classList.add("hidden");
+    document.getElementById("pairing-actions")?.classList.remove("hidden");
+    document.getElementById("lan-connect-text").value = "";
+  }
+
+  async _handleLANConnect() {
+    const input = document.getElementById("lan-connect-text");
+    if (!input) return;
+    const raw = input.value.trim();
+    if (!raw) return;
+    let payload = raw;
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+      try {
+        const url = new URL(raw);
+        payload = url.searchParams.get("connect") || decodeURIComponent(url.hash.slice(9)) || raw;
+      } catch {}
+    }
+    this._hideLANInput();
+    await this._handleScannedOffer(payload);
+  }
+
+  async _handleShareNearby() {
+    if (!this._currentQrPayload) return;
+    const result = await shareConnection(this._currentQrPayload);
+    if (result === "shared") {
+      this._updateProgress("Link shared", "Connection link sent to nearby device");
+    } else if (result === "clipboard") {
+      this._updateProgress("Link copied", "Connection link copied — share it with the other device");
+    }
+  }
+
+  async _handleCopyLink() {
+    if (!this._currentQrPayload) return;
+    const ok = await copyShareText(this._currentQrPayload);
+    this._updateProgress(ok ? "Link copied" : "Could not copy",
+      "Paste the link into the other device's browser");
+  }
+
+  async handleIncomingConnection(sdpPayload) {
+    if (this._state !== PAIRING_STATE.IDLE) {
+      console.warn("[PairingView] Busy, ignoring incoming connection");
+      return;
+    }
+    this._isInitiator = false;
+    this._renderState(PAIRING_STATE.CONNECTING);
+    this._updateProgress("Processing connection link...", "Establishing secure P2P connection");
+    try {
+      const deviceId = this.keyManager.getFingerprint();
+      const result = await answerOffer(sdpPayload, deviceId);
+      this._currentPc = result.pc;
+      this._currentDataChannel = result.dataChannel;
+      this._currentPc.onconnectionstatechange = () => {
+        if (this._currentPc.connectionState === "connected") {
+          this._onPeerConnected(this._currentPc, this._currentDataChannel);
+        }
+      };
+    } catch (error) {
+      console.error("[PairingView] Incoming connection failed:", error);
+      this._renderState(PAIRING_STATE.FAILED);
+      this._updateProgress("Connection failed", error.message || "Could not process connection link");
+      this._cleanup();
+    }
   }
 }
