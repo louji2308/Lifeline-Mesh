@@ -15,11 +15,11 @@ function getBarcodeDetector() {
 
 const QR_CODE_MIME = "image/png";
 
-export function toBase64Url(buffer) {
-  const bytes = new Uint8Array(buffer);
+export function toBase64Url(bytes) {
+  const view = new Uint8Array(bytes);
   let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < view.length; i++) {
+    binary += String.fromCharCode(view[i]);
   }
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
@@ -35,14 +35,75 @@ export function fromBase64Url(str) {
   return bytes.buffer;
 }
 
+async function compressWithStream(bytes) {
+  const cs = new CompressionStream("deflate-raw");
+  const writer = cs.writable.getWriter();
+  const reader = cs.readable.getReader();
+  writer.write(bytes);
+  writer.close();
+  const chunks = [];
+  let done = false;
+  while (!done) {
+    const readResult = await reader.read();
+    done = readResult.done;
+    if (!done) chunks.push(readResult.value);
+  }
+  const totalLength = chunks.reduce((acc, c) => acc + c.byteLength, 0);
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return combined;
+}
+
+async function decompressWithStream(compressed) {
+  const ds = new DecompressionStream("deflate-raw");
+  const writer = ds.writable.getWriter();
+  const reader = ds.readable.getReader();
+  writer.write(compressed);
+  writer.close();
+  const chunks = [];
+  let done = false;
+  while (!done) {
+    const readResult = await reader.read();
+    done = readResult.done;
+    if (!done) chunks.push(readResult.value);
+  }
+  const totalLength = chunks.reduce((acc, c) => acc + c.byteLength, 0);
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return combined;
+}
+
+const supportsCompressionStream = typeof CompressionStream !== "undefined" &&
+  typeof DecompressionStream !== "undefined";
+
 export async function compressPayload(data) {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(typeof data === "string" ? data : JSON.stringify(data));
-  return toBase64Url(bytes.buffer);
+  try {
+    if (supportsCompressionStream) {
+      const compressed = await compressWithStream(bytes);
+      return toBase64Url(compressed);
+    }
+  } catch {}
+  return toBase64Url(bytes);
 }
 
 export async function decompressPayload(payloadStr) {
   const raw = new Uint8Array(fromBase64Url(payloadStr));
+  try {
+    if (supportsCompressionStream) {
+      const decompressed = await decompressWithStream(raw);
+      return new TextDecoder().decode(decompressed);
+    }
+  } catch {}
   return new TextDecoder().decode(raw);
 }
 
