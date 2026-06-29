@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LifeLine Mesh — Test Harness</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0b0f14; color: #e8eaed; padding: 24px; max-width: 720px; margin: 0 auto;
+    }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    h2 { font-size: 18px; margin: 24px 0 12px; color: #9aa0a6; text-transform: uppercase; letter-spacing: 0.5px; }
+    #results { margin-bottom: 24px; }
+    .summary { display: flex; gap: 16px; margin-bottom: 24px; }
+    .summary-item { padding: 16px 24px; border-radius: 8px; text-align: center; flex: 1; }
+    .summary-pass { background: rgba(52,168,83,0.15); border: 1px solid #34a853; }
+    .summary-fail { background: rgba(229,57,53,0.15); border: 1px solid #e53935; }
+    .summary-number { font-size: 36px; font-weight: 700; }
+    .summary-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    #log {
+      background: #141922; border-radius: 8px; padding: 16px;
+      font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; line-height: 1.6;
+      max-height: 600px; overflow-y: auto;
+    }
+    .pass { color: #34a853; }
+    .fail { color: #e53935; }
+    .info { color: #9aa0a6; }
+    .group { color: #4285f4; font-weight: 600; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h1>🧪 LifeLine Mesh — Unit Test Harness</h1>
+  <p style="color:#9aa0a6;margin-bottom:24px;">Testing core data structures: Bloom Filter, Priority Queue, Vector Clocks, CRDT G-Set</p>
+
+  <div id="results">
+    <div class="summary">
+      <div class="summary-item summary-pass">
+        <div id="pass-count" class="summary-number" style="color:#34a853;">0</div>
+        <div class="summary-label">Passed</div>
+      </div>
+      <div class="summary-item summary-fail">
+        <div id="fail-count" class="summary-number" style="color:#e53935;">0</div>
+        <div class="summary-label">Failed</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="log">
+    <div class="info">Running tests...</div>
+  </div>
+
+  <script type="module">
+    const logEl = document.getElementById("log");
+    const passCountEl = document.getElementById("pass-count");
+    const failCountEl = document.getElementById("fail-count");
+
+    const origLog = console.log;
+    const origError = console.error;
+    const origGroup = console.group;
+    const origGroupEnd = console.groupEnd;
+
+    let passCount = 0;
+    let failCount = 0;
+
+    function appendLog(html, cls = "info") {
+      const div = document.createElement("div");
+      div.className = cls;
+      div.innerHTML = html;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    console.log = (...args) => {
+      const msg = args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ");
+      if (msg.startsWith("  ✅")) {
+        passCount++;
+        appendLog(msg.replace("  ✅ ", "✓ "), "pass");
+      } else if (msg.startsWith("  ❌")) {
+        failCount++;
+        appendLog(msg.replace("  ❌ ", "✗ "), "fail");
+      } else {
+        appendLog(msg, "info");
+      }
+      passCountEl.textContent = passCount;
+      failCountEl.textContent = failCount;
+      origLog.apply(console, args);
+    };
+
+    console.error = (...args) => {
+      origError.apply(console, args);
+    };
+
+    console.group = (label) => {
+      appendLog(`▸ ${label}`, "group");
+      origGroup(label);
+    };
+
+    console.groupEnd = () => {
+      origGroupEnd();
+    };
+
+    // Capture any uncaught errors
+    window.onerror = (msg) => {
+      appendLog(`⚠ Uncaught: ${msg}`, "fail");
+      failCount++;
+      passCountEl.textContent = passCount;
+      failCountEl.textContent = failCount;
+    };
+
+    // Load and run tests
+    try {
+      await import("./unit-tests.js");
+      appendLog("─".repeat(40), "info");
+      appendLog(`<b>All tests complete: ${passCount} passed, ${failCount} failed</b>`,
+        failCount === 0 ? "pass" : "fail");
+    } catch (err) {
+      appendLog(`Test load failed: ${err.message}`, "fail");
+      failCount++;
+      passCountEl.textContent = passCount;
+      failCountEl.textContent = failCount;
+    }
+  </script>
+</body>
+</html>
