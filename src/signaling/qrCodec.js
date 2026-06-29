@@ -304,6 +304,9 @@ function stripNonEssentialSdpLines(sdp) {
     if (trimmed.startsWith("t=")) return true;
     if (trimmed.startsWith("a=setup:")) return true;
     if (trimmed.startsWith("a=end-of-candidates")) return true;
+    if (trimmed.startsWith("a=sctp-port:")) return true;
+    if (trimmed.startsWith("a=max-message-size:")) return true;
+    if (trimmed.startsWith("a=group:")) return true;
     return false;
   }).join("\n");
   console.log(`[SDP] Stripped SDP: ${result.length} bytes, ${candidateCount} candidates`);
