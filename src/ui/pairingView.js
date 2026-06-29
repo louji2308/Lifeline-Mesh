@@ -450,15 +450,20 @@ export class PairingView extends EventTarget {
     this._updateProgress("Connecting...", "Establishing secure P2P connection");
     try {
       const deviceId = this.keyManager.getFingerprint();
-      const result = await answerOffer(payload, deviceId);
-      this._currentPc = result.pc;
-      this._currentDataChannel = result.dataChannel;
-      this._currentQrPayload = result.qrPayload;
-      this._currentPc.onconnectionstatechange = () => {
-        if (this._currentPc.connectionState === "connected") {
-          this._onPeerConnected(this._currentPc, this._currentDataChannel);
-        }
-      };
+      if (this._currentPc && ["have-local-offer", "stable"].includes(this._currentPc.signalingState)) {
+        await completeHandshake(this._currentPc, payload);
+        this._updateProgress("Handshake complete", "Waiting for connection...");
+      } else {
+        const result = await answerOffer(payload, deviceId);
+        this._currentPc = result.pc;
+        this._currentDataChannel = result.dataChannel;
+        this._currentQrPayload = result.qrPayload;
+        this._currentPc.onconnectionstatechange = () => {
+          if (this._currentPc.connectionState === "connected") {
+            this._onPeerConnected(this._currentPc, this._currentDataChannel);
+          }
+        };
+      }
     } catch (error) {
       this._renderState(PAIRING_STATE.FAILED);
       this._updateProgress("Connection failed", error.message || "Could not connect using the provided link");
