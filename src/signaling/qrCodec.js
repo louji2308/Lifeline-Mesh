@@ -192,7 +192,7 @@ function binarySearchCapacity(version, low, high) {
   return low;
 }
 
-export async function renderqrcode(container, payload, label = "Scan this QR") {
+export async function renderQRCode(container, payload, label = "Scan this QR") {
   const strPayload = typeof payload === "string" ? payload : JSON.stringify(payload);
   const canvasEl = qrEncodeToCanvas(strPayload);
   canvasEl.className = "qr-canvas";
@@ -228,7 +228,7 @@ export async function renderqrcode(container, payload, label = "Scan this QR") {
   return strPayload;
 }
 
-export async function scanqrcode(videoElement) {
+export async function scanQRCode(videoElement) {
   const detector = getBarcodeDetector();
   if (!detector) return null;
   try {
